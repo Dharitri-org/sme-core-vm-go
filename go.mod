@@ -5,8 +5,8 @@ go 1.19
 require (
 	github.com/Dharitri-org/sme-components-big-int v0.0.1
 	github.com/Dharitri-org/sme-logger v0.0.1
-	github.com/Dharitri-org/sme-vm-common v0.0.3
-	github.com/Dharitri-org/sme-vm-util v0.0.1
+	github.com/Dharitri-org/sme-vm-common v0.0.4
+	github.com/Dharitri-org/sme-vm-util v0.0.2
 	github.com/gin-gonic/gin v1.6.3
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/pelletier/go-toml v1.6.0
@@ -34,5 +34,5 @@ require (
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	golang.org/x/sys v0.13.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
-	gopkg.in/yaml.v2 v2.2.8 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

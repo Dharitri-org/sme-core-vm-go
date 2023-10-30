@@ -361,8 +361,6 @@ func ethstorageLoad(context unsafe.Pointer, pathOffset int32, resultOffset int32
 	}
 
 	data := storage.GetStorage(key)
-	dataGasToUse := metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(len(data))
-	metering.UseGas(dataGasToUse)
 
 	currInput := make([]byte, core.HashLen)
 	copy(currInput[core.HashLen-len(data):], data)

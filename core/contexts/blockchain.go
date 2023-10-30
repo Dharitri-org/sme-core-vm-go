@@ -118,6 +118,12 @@ func (context *blockchainContext) GetCodeHash(addr []byte) ([]byte, error) {
 }
 
 func (context *blockchainContext) GetCode(address []byte) ([]byte, error) {
+	outputAccount, isNew := context.host.Output().GetOutputAccount(address)
+	hasCode := !isNew && len(outputAccount.Code) > 0
+	if hasCode {
+		return outputAccount.Code, nil
+	}
+
 	account, err := context.blockChainHook.GetUserAccount(address)
 	if err != nil {
 		return nil, err
@@ -131,7 +137,9 @@ func (context *blockchainContext) GetCode(address []byte) ([]byte, error) {
 		return nil, core.ErrContractNotFound
 	}
 
-	return account.GetCode(), nil
+	outputAccount.Code = code
+
+	return code, nil
 }
 
 func (context *blockchainContext) GetCodeSize(address []byte) (int32, error) {
@@ -218,4 +226,8 @@ func (context *blockchainContext) GetShardOfAddress(addr []byte) uint32 {
 
 func (context *blockchainContext) IsSmartContract(addr []byte) bool {
 	return context.blockChainHook.IsSmartContract(addr)
+}
+
+func (context *blockchainContext) IsPayable(addr []byte) (bool, error) {
+	return context.blockChainHook.IsPayable(addr)
 }

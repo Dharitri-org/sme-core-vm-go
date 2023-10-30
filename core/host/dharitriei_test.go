@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDharitriEi_CallValue(t *testing.T) {
+func TestDharitriEI_CallValue(t *testing.T) {
 	code := GetTestSCCode("dharitriei", "../../")
 
 	// 1-byte call value
@@ -87,7 +87,7 @@ func TestDharitriEi_CallValue(t *testing.T) {
 	assert.Equal(t, big.NewInt(12345), val12345)
 }
 
-func TestDharitriEi_int64getArgument(t *testing.T) {
+func TestDharitriEI_int64getArgument(t *testing.T) {
 	code := GetTestSCCode("dharitriei", "../../")
 	host, _ := DefaultTestCoreForCall(t, code, nil)
 	input := DefaultTestContractCallInput()

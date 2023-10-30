@@ -2,7 +2,6 @@ package contexts
 
 import (
 	"fmt"
-	"unsafe"
 
 	"github.com/Dharitri-org/sme-core-vm-go/core"
 	"github.com/Dharitri-org/sme-core-vm-go/wasmer"
@@ -12,16 +11,15 @@ import (
 var _ core.RuntimeContext = (*runtimeContext)(nil)
 
 type runtimeContext struct {
-	host     core.VMHost
-	instance *wasmer.Instance
-	// Temporarily holding these pointers are supposed to circumvent an undesired deallocation performed by Go's GC
-	instanceContextDataPointers []*int
-	instanceContext             *wasmer.InstanceContext
-	vmInput                     *vmcommon.VMInput
-	scAddress                   []byte
-	callFunction                string
-	vmType                      []byte
-	readOnly                    bool
+	host         core.VMHost
+	instance     *wasmer.Instance
+	vmInput      *vmcommon.VMInput
+	scAddress    []byte
+	callFunction string
+	vmType       []byte
+	readOnly     bool
+
+	verifyCode bool
 
 	stateStack    []*runtimeContext
 	instanceStack []*wasmer.Instance
@@ -40,12 +38,11 @@ func NewRuntimeContext(host core.VMHost, vmType []byte) (*runtimeContext, error)
 	protocolBuiltinFunctions := host.GetProtocolBuiltinFunctions()
 
 	context := &runtimeContext{
-		host:                        host,
-		instanceContextDataPointers: make([]*int, 0),
-		vmType:                      vmType,
-		stateStack:                  make([]*runtimeContext, 0),
-		instanceStack:               make([]*wasmer.Instance, 0),
-		validator:                   NewWASMValidator(scAPINames, protocolBuiltinFunctions),
+		host:          host,
+		vmType:        vmType,
+		stateStack:    make([]*runtimeContext, 0),
+		instanceStack: make([]*wasmer.Instance, 0),
+		validator:     NewWASMValidator(scAPINames, protocolBuiltinFunctions),
 	}
 
 	context.InitState()
@@ -54,10 +51,10 @@ func NewRuntimeContext(host core.VMHost, vmType []byte) (*runtimeContext, error)
 }
 
 func (context *runtimeContext) InitState() {
-	context.instanceContextDataPointers = make([]*int, 0)
 	context.vmInput = &vmcommon.VMInput{}
 	context.scAddress = make([]byte, 0)
 	context.callFunction = ""
+	context.verifyCode = false
 	context.readOnly = false
 	context.asyncCallInfo = nil
 	context.asyncContextInfo = &core.AsyncContextInfo{
@@ -83,8 +80,22 @@ func (context *runtimeContext) StartWasmerInstance(contract []byte, gasLimit uin
 	}
 
 	context.instance = newInstance
+
+	idContext := core.AddHostContext(context.host)
+	context.instance.SetContextData(idContext)
+
+	err = context.VerifyContractCode()
+	if err != nil {
+		context.CleanWasmerInstance()
+		return err
+	}
+
 	context.SetRuntimeBreakpointValue(core.BreakpointNone)
 	return nil
+}
+
+func (context *runtimeContext) MustVerifyNextContractCode() {
+	context.verifyCode = true
 }
 
 func (context *runtimeContext) SetMaxInstanceCount(maxInstances uint64) {
@@ -150,7 +161,7 @@ func (context *runtimeContext) PopInstance() {
 	prevInstance := context.instanceStack[instanceStackLen-1]
 	context.instanceStack = context.instanceStack[:instanceStackLen-1]
 
-	context.CleanInstance()
+	context.CleanWasmerInstance()
 	context.instance = prevInstance
 }
 
@@ -244,6 +255,12 @@ func (context *runtimeContext) GetRuntimeBreakpointValue() core.BreakpointValue 
 }
 
 func (context *runtimeContext) VerifyContractCode() error {
+	if !context.verifyCode {
+		return nil
+	}
+
+	context.verifyCode = false
+
 	err := context.validator.verifyMemoryDeclaration(context.instance)
 	if err != nil {
 		return err
@@ -285,27 +302,16 @@ func (context *runtimeContext) SetReadOnly(readOnly bool) {
 	context.readOnly = readOnly
 }
 
-func (context *runtimeContext) SetInstanceContextID(id int) {
-	context.instanceContextDataPointers = append(context.instanceContextDataPointers, &id)
-	context.instance.SetContextData(unsafe.Pointer(&id))
-}
-
-func (context *runtimeContext) SetInstanceContext(instCtx *wasmer.InstanceContext) {
-	context.instanceContext = instCtx
-}
-
-func (context *runtimeContext) GetInstanceContext() *wasmer.InstanceContext {
-	return context.instanceContext
-}
-
 func (context *runtimeContext) GetInstanceExports() wasmer.ExportsMap {
 	return context.instance.Exports
 }
 
-func (context *runtimeContext) CleanInstance() {
+func (context *runtimeContext) CleanWasmerInstance() {
 	if context.instance == nil {
 		return
 	}
+
+	core.RemoveHostContext(*context.instance.Data)
 	context.instance.Clean()
 	context.instance = nil
 }
@@ -378,7 +384,7 @@ func (context *runtimeContext) MemLoad(offset int32, length int32) ([]byte, erro
 		return []byte{}, nil
 	}
 
-	memory := context.instanceContext.Memory()
+	memory := context.instance.InstanceCtx.Memory()
 	memoryView := memory.Data()
 	memoryLength := memory.Length()
 	requestedEnd := uint32(offset + length)
@@ -410,7 +416,7 @@ func (context *runtimeContext) MemStore(offset int32, data []byte) error {
 		return nil
 	}
 
-	memory := context.instanceContext.Memory()
+	memory := context.instance.InstanceCtx.Memory()
 	memoryView := memory.Data()
 	memoryLength := memory.Length()
 	requestedEnd := uint32(offset + dataLength)

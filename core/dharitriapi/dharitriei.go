@@ -31,7 +31,7 @@ package dharitriapi
 // extern int32_t executeOnSameContext(void *context, long long gas, int32_t addressOffset, int32_t valueOffset, int32_t functionOffset, int32_t functionLength, int32_t numArguments, int32_t argumentsLengthOffset, int32_t dataOffset);
 // extern int32_t delegateExecution(void *context, long long gas, int32_t addressOffset, int32_t functionOffset, int32_t functionLength, int32_t numArguments, int32_t argumentsLengthOffset, int32_t dataOffset);
 // extern int32_t executeReadOnly(void *context, long long gas, int32_t addressOffset, int32_t functionOffset, int32_t functionLength, int32_t numArguments, int32_t argumentsLengthOffset, int32_t dataOffset);
-// extern int32_t createContract(void *context, int32_t valueOffset, int32_t codeOffset, int32_t length, int32_t resultOffset, int32_t numArguments, int32_t argumentsLengthOffset, int32_t dataOffset);
+// extern int32_t createContract(void *context, long long gas, int32_t valueOffset, int32_t codeOffset, int32_t length, int32_t resultOffset, int32_t numArguments, int32_t argumentsLengthOffset, int32_t dataOffset);
 // extern void asyncCall(void *context, int32_t dstOffset, int32_t valueOffset, int32_t dataOffset, int32_t length);
 // extern void createAsyncCall(void *context, int32_t identifierOffset, int32_t identifierLength, int32_t dstOffset, int32_t valueOffset, int32_t dataOffset, int32_t length, int32_t successCallback, int32_t successLength, int32_t errorCallback, int32_t errorLength, long long gas);
 // extern int32_t setAsyncContextCallback(void *context, int32_t identifierOffset, int32_t identifierLength, int32_t callback, int32_t callbackLength);
@@ -73,10 +73,11 @@ import (
 	"github.com/Dharitri-org/sme-core-vm-go/core"
 	"github.com/Dharitri-org/sme-core-vm-go/wasmer"
 	vmcommon "github.com/Dharitri-org/sme-vm-common"
+	"github.com/Dharitri-org/sme-vm-common/parsers"
 )
 
-// DharitriEiImports creates a new wasmer.Imports populated with the DharitriEi API methods
-func DharitriEiImports() (*wasmer.Imports, error) {
+// DharitriEIImports creates a new wasmer.Imports populated with the DharitriEI API methods
+func DharitriEIImports() (*wasmer.Imports, error) {
 	imports := wasmer.NewImports()
 	imports = imports.Namespace("env")
 
@@ -120,15 +121,15 @@ func DharitriEiImports() (*wasmer.Imports, error) {
 		return nil, err
 	}
 
-	imports, err = imports.Append("createAsyncCall", createAsyncCall, C.createAsyncCall)
-	if err != nil {
-		return nil, err
-	}
+	// imports, err = imports.Append("createAsyncCall", createAsyncCall, C.createAsyncCall)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	imports, err = imports.Append("setAsyncContextCallback", setAsyncContextCallback, C.setAsyncContextCallback)
-	if err != nil {
-		return nil, err
-	}
+	// imports, err = imports.Append("setAsyncContextCallback", setAsyncContextCallback, C.setAsyncContextCallback)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	imports, err = imports.Append("getArgumentLength", getArgumentLength, C.getArgumentLength)
 	if err != nil {
@@ -265,6 +266,11 @@ func DharitriEiImports() (*wasmer.Imports, error) {
 		return nil, err
 	}
 
+	imports, err = imports.Append("getOriginalTxHash", getOriginalTxHash, C.getOriginalTxHash)
+	if err != nil {
+		return nil, err
+	}
+
 	imports, err = imports.Append("getGasLeft", getGasLeft, C.getGasLeft)
 	if err != nil {
 		return nil, err
@@ -350,14 +356,14 @@ func getSCAddress(context unsafe.Pointer, resultOffset int32) {
 	runtime := core.GetRuntimeContext(context)
 	metering := core.GetMeteringContext(context)
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.GetSCAddress
+	metering.UseGas(gasToUse)
+
 	owner := runtime.GetSCAddress()
 	err := runtime.MemStore(resultOffset, owner)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return
 	}
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.GetSCAddress
-	metering.UseGas(gasToUse)
 }
 
 //export getOwnerAddress
@@ -365,6 +371,9 @@ func getOwnerAddress(context unsafe.Pointer, resultOffset int32) {
 	blockchain := core.GetBlockchainContext(context)
 	runtime := core.GetRuntimeContext(context)
 	metering := core.GetMeteringContext(context)
+
+	gasToUse := metering.GasSchedule().DharitriAPICost.GetOwnerAddress
+	metering.UseGas(gasToUse)
 
 	owner, err := blockchain.GetOwnerAddress()
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
@@ -375,9 +384,6 @@ func getOwnerAddress(context unsafe.Pointer, resultOffset int32) {
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return
 	}
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.GetOwnerAddress
-	metering.UseGas(gasToUse)
 }
 
 //export getShardOfAddress
@@ -386,13 +392,13 @@ func getShardOfAddress(context unsafe.Pointer, addressOffset int32) int32 {
 	runtime := core.GetRuntimeContext(context)
 	metering := core.GetMeteringContext(context)
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.GetShardOfAddress
+	metering.UseGas(gasToUse)
+
 	address, err := runtime.MemLoad(addressOffset, core.AddressLen)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return 0
 	}
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.GetShardOfAddress
-	metering.UseGas(gasToUse)
 
 	return int32(blockchain.GetShardOfAddress(address))
 }
@@ -403,13 +409,13 @@ func isSmartContract(context unsafe.Pointer, addressOffset int32) int32 {
 	runtime := core.GetRuntimeContext(context)
 	metering := core.GetMeteringContext(context)
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.IsSmartContract
+	metering.UseGas(gasToUse)
+
 	address, err := runtime.MemLoad(addressOffset, core.AddressLen)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return 0
 	}
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.IsSmartContract
-	metering.UseGas(gasToUse)
 
 	isSmartContract := blockchain.IsSmartContract(address)
 	return int32(core.BooleanToInt(isSmartContract))
@@ -420,14 +426,14 @@ func signalError(context unsafe.Pointer, messageOffset int32, messageLength int3
 	runtime := core.GetRuntimeContext(context)
 	metering := core.GetMeteringContext(context)
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.SignalError
+	metering.UseGas(gasToUse)
+
 	message, err := runtime.MemLoad(messageOffset, messageLength)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return
 	}
 	runtime.SignalUserError(string(message))
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.SignalError
-	metering.UseGas(gasToUse)
 }
 
 //export getExternalBalance
@@ -435,6 +441,9 @@ func getExternalBalance(context unsafe.Pointer, addressOffset int32, resultOffse
 	blockchain := core.GetBlockchainContext(context)
 	runtime := core.GetRuntimeContext(context)
 	metering := core.GetMeteringContext(context)
+
+	gasToUse := metering.GasSchedule().DharitriAPICost.GetExternalBalance
+	metering.UseGas(gasToUse)
 
 	address, err := runtime.MemLoad(addressOffset, core.AddressLen)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
@@ -447,9 +456,6 @@ func getExternalBalance(context unsafe.Pointer, addressOffset int32, resultOffse
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return
 	}
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.GetExternalBalance
-	metering.UseGas(gasToUse)
 }
 
 //export blockHash
@@ -472,9 +478,13 @@ func blockHash(context unsafe.Pointer, nonce int64, resultOffset int32) int32 {
 
 //export transferValue
 func transferValue(context unsafe.Pointer, destOffset int32, valueOffset int32, dataOffset int32, length int32) int32 {
-	runtime := core.GetRuntimeContext(context)
-	metering := core.GetMeteringContext(context)
-	output := core.GetOutputContext(context)
+	host := core.GetVmContext(context)
+	runtime := host.Runtime()
+	metering := host.Metering()
+	output := host.Output()
+
+	gasToUse := metering.GasSchedule().DharitriAPICost.TransferValue
+	metering.UseGas(gasToUse)
 
 	send := runtime.GetSCAddress()
 	dest, err := runtime.MemLoad(destOffset, core.AddressLen)
@@ -487,14 +497,20 @@ func transferValue(context unsafe.Pointer, destOffset int32, valueOffset int32, 
 		return 1
 	}
 
+	gasToUse = metering.GasSchedule().BaseOperationCost.PersistPerByte * uint64(length)
+	metering.UseGas(gasToUse)
+
 	data, err := runtime.MemLoad(dataOffset, length)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return 1
 	}
 
-	gasToUse := metering.GasSchedule().DharitriAPICost.TransferValue
-	gasToUse += metering.GasSchedule().BaseOperationCost.PersistPerByte * uint64(length)
-	metering.UseGas(gasToUse)
+	// TODO write test for this, after removing vmContextMap
+	argParser := parsers.NewCallArgsParser()
+	functionName, _, err := argParser.ParseData(string(data))
+	if host.IsBuiltinFunctionName(functionName) {
+		return 1
+	}
 
 	err = output.Transfer(dest, send, 0, big.NewInt(0).SetBytes(value), data)
 	if err != nil {
@@ -518,7 +534,10 @@ func createAsyncCall(context unsafe.Pointer,
 	errorLength int32,
 	gas int64,
 ) {
-	runtime := core.GetRuntimeContext(context)
+	host := core.GetVmContext(context)
+	runtime := host.Runtime()
+
+	// TODO consume gas
 
 	acIdentifier, err := runtime.MemLoad(asyncContextIdentifier, identifierLength)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
@@ -561,7 +580,6 @@ func createAsyncCall(context unsafe.Pointer,
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return
 	}
-
 }
 
 //export setAsyncContextCallback
@@ -571,7 +589,10 @@ func setAsyncContextCallback(context unsafe.Pointer,
 	callback int32,
 	callbackLength int32,
 ) int32 {
-	runtime := core.GetRuntimeContext(context)
+	host := core.GetVmContext(context)
+	runtime := host.Runtime()
+
+	// TODO consume gas
 
 	acIdentifier, err := runtime.MemLoad(asyncContextIdentifier, identifierLength)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
@@ -595,8 +616,13 @@ func setAsyncContextCallback(context unsafe.Pointer,
 
 //export asyncCall
 func asyncCall(context unsafe.Pointer, destOffset int32, valueOffset int32, dataOffset int32, length int32) {
-	runtime := core.GetRuntimeContext(context)
-	metering := core.GetMeteringContext(context)
+	host := core.GetVmContext(context)
+	runtime := host.Runtime()
+	metering := host.Metering()
+
+	gasSchedule := metering.GasSchedule()
+	gasToUse := gasSchedule.DharitriAPICost.AsyncCallStep
+	metering.UseGas(gasToUse)
 
 	calledSCAddress, err := runtime.MemLoad(destOffset, core.AddressLen)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
@@ -608,15 +634,13 @@ func asyncCall(context unsafe.Pointer, destOffset int32, valueOffset int32, data
 		return
 	}
 
+	gasToUse = gasSchedule.BaseOperationCost.DataCopyPerByte * uint64(length)
+	metering.UseGas(gasToUse)
+
 	data, err := runtime.MemLoad(dataOffset, length)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return
 	}
-
-	gasSchedule := metering.GasSchedule()
-	gasToUse := gasSchedule.DharitriAPICost.AsyncCallStep
-	gasToUse += gasSchedule.BaseOperationCost.DataCopyPerByte * uint64(length)
-	metering.UseGas(gasToUse)
 
 	gasLimit := metering.GasLeft()
 
@@ -712,6 +736,9 @@ func storageStore(context unsafe.Pointer, keyOffset int32, keyLength int32, data
 	storage := core.GetStorageContext(context)
 	metering := core.GetMeteringContext(context)
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.StorageStore
+	metering.UseGas(gasToUse)
+
 	key, err := runtime.MemLoad(keyOffset, keyLength)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return -1
@@ -721,9 +748,6 @@ func storageStore(context unsafe.Pointer, keyOffset int32, keyLength int32, data
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return -1
 	}
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.StorageStore
-	metering.UseGas(gasToUse)
 
 	storageStatus, err := storage.SetStorage(key, data)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
@@ -739,15 +763,15 @@ func storageLoadLength(context unsafe.Pointer, keyOffset int32, keyLength int32)
 	storage := core.GetStorageContext(context)
 	metering := core.GetMeteringContext(context)
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.StorageLoad
+	metering.UseGas(gasToUse)
+
 	key, err := runtime.MemLoad(keyOffset, keyLength)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return -1
 	}
 
-	data := storage.GetStorage(key)
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.StorageLoad
-	metering.UseGas(gasToUse)
+	data := storage.GetStorageUnmetered(key)
 
 	return int32(len(data))
 }
@@ -758,16 +782,15 @@ func storageLoad(context unsafe.Pointer, keyOffset int32, keyLength int32, dataO
 	storage := core.GetStorageContext(context)
 	metering := core.GetMeteringContext(context)
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.StorageLoad
+	metering.UseGas(gasToUse)
+
 	key, err := runtime.MemLoad(keyOffset, keyLength)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return -1
 	}
 
 	data := storage.GetStorage(key)
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.StorageLoad
-	gasToUse += metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(len(data))
-	metering.UseGas(gasToUse)
 
 	err = runtime.MemStore(dataOffset, data)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
@@ -783,15 +806,15 @@ func setStorageLock(context unsafe.Pointer, keyOffset int32, keyLength int32, lo
 	storage := core.GetStorageContext(context)
 	metering := core.GetMeteringContext(context)
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.Int64StorageStore
+	metering.UseGas(gasToUse)
+
 	key, err := runtime.MemLoad(keyOffset, keyLength)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return -1
 	}
 
 	timeLockKey := core.CustomStorageKey(core.TimeLockKeyPrefix, key)
-	gasToUse := metering.GasSchedule().DharitriAPICost.Int64StorageStore
-	metering.UseGas(gasToUse)
-
 	bigTimestamp := big.NewInt(0).SetInt64(lockTimestamp)
 	storageStatus, err := storage.SetStorage(timeLockKey, bigTimestamp.Bytes())
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
@@ -806,15 +829,15 @@ func getStorageLock(context unsafe.Pointer, keyOffset int32, keyLength int32) in
 	metering := core.GetMeteringContext(context)
 	storage := core.GetStorageContext(context)
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.StorageLoad
+	metering.UseGas(gasToUse)
+
 	key, err := runtime.MemLoad(keyOffset, keyLength)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return -1
 	}
 
 	timeLockKey := core.CustomStorageKey(core.TimeLockKeyPrefix, key)
-	gasToUse := metering.GasSchedule().DharitriAPICost.StorageLoad
-	metering.UseGas(gasToUse)
-
 	data := storage.GetStorage(timeLockKey)
 	timeLock := big.NewInt(0).SetBytes(data).Int64()
 
@@ -846,15 +869,15 @@ func getCaller(context unsafe.Pointer, resultOffset int32) {
 	runtime := core.GetRuntimeContext(context)
 	metering := core.GetMeteringContext(context)
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.GetCaller
+	metering.UseGas(gasToUse)
+
 	caller := runtime.GetVMInput().CallerAddr
 
 	err := runtime.MemStore(resultOffset, caller)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return
 	}
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.GetCaller
-	metering.UseGas(gasToUse)
 }
 
 //export callValue
@@ -862,11 +885,11 @@ func callValue(context unsafe.Pointer, resultOffset int32) int32 {
 	runtime := core.GetRuntimeContext(context)
 	metering := core.GetMeteringContext(context)
 
-	value := runtime.GetVMInput().CallValue.Bytes()
-	value = core.PadBytesLeft(value, core.BalanceLen)
-
 	gasToUse := metering.GasSchedule().DharitriAPICost.GetCallValue
 	metering.UseGas(gasToUse)
+
+	value := runtime.GetVMInput().CallValue.Bytes()
+	value = core.PadBytesLeft(value, core.BalanceLen)
 
 	err := runtime.MemStore(resultOffset, value)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
@@ -881,6 +904,10 @@ func writeLog(context unsafe.Pointer, pointer int32, length int32, topicPtr int3
 	runtime := core.GetRuntimeContext(context)
 	output := core.GetOutputContext(context)
 	metering := core.GetMeteringContext(context)
+
+	gasToUse := metering.GasSchedule().DharitriAPICost.Log
+	gasToUse += metering.GasSchedule().BaseOperationCost.PersistPerByte * uint64(numTopics*core.HashLen+length)
+	metering.UseGas(gasToUse)
 
 	log, err := runtime.MemLoad(pointer, length)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
@@ -900,10 +927,6 @@ func writeLog(context unsafe.Pointer, pointer int32, length int32, topicPtr int3
 	}
 
 	output.WriteLog(runtime.GetSCAddress(), topics, log)
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.Log
-	gasToUse += metering.GasSchedule().BaseOperationCost.PersistPerByte * uint64(numTopics*core.HashLen+length)
-	metering.UseGas(gasToUse)
 }
 
 //export getBlockTimestamp
@@ -1042,15 +1065,16 @@ func returnData(context unsafe.Pointer, pointer int32, length int32) {
 	output := core.GetOutputContext(context)
 	metering := core.GetMeteringContext(context)
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.Finish
+	gasToUse += metering.GasSchedule().BaseOperationCost.PersistPerByte * uint64(length)
+	metering.UseGas(gasToUse)
+
 	data, err := runtime.MemLoad(pointer, length)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return
 	}
 
 	output.Finish(data)
-	gasToUse := metering.GasSchedule().DharitriAPICost.Finish
-	gasToUse += metering.GasSchedule().BaseOperationCost.PersistPerByte * uint64(length)
-	metering.UseGas(gasToUse)
 }
 
 //export int64getArgument
@@ -1082,15 +1106,15 @@ func int64storageStore(context unsafe.Pointer, keyOffset int32, keyLength int32,
 	storage := core.GetStorageContext(context)
 	metering := core.GetMeteringContext(context)
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.Int64StorageStore
+	metering.UseGas(gasToUse)
+
 	key, err := runtime.MemLoad(keyOffset, keyLength)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return -1
 	}
 
 	data := big.NewInt(value)
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.Int64StorageStore
-	metering.UseGas(gasToUse)
 
 	storageStatus, err := storage.SetStorage(key, data.Bytes())
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
@@ -1106,6 +1130,9 @@ func int64storageLoad(context unsafe.Pointer, keyOffset int32, keyLength int32) 
 	storage := core.GetStorageContext(context)
 	metering := core.GetMeteringContext(context)
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.Int64StorageLoad
+	metering.UseGas(gasToUse)
+
 	key, err := runtime.MemLoad(keyOffset, keyLength)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return 0
@@ -1115,9 +1142,6 @@ func int64storageLoad(context unsafe.Pointer, keyOffset int32, keyLength int32) 
 
 	bigInt := big.NewInt(0).SetBytes(data)
 
-	gasToUse := metering.GasSchedule().DharitriAPICost.Int64StorageLoad
-	metering.UseGas(gasToUse)
-
 	return bigInt.Int64()
 }
 
@@ -1126,11 +1150,11 @@ func int64finish(context unsafe.Pointer, value int64) {
 	output := core.GetOutputContext(context)
 	metering := core.GetMeteringContext(context)
 
-	valueBytes := twos.ToBytes(big.NewInt(0).SetInt64(value))
-	output.Finish(valueBytes)
-
 	gasToUse := metering.GasSchedule().DharitriAPICost.Int64Finish
 	metering.UseGas(gasToUse)
+
+	valueBytes := twos.ToBytes(big.NewInt(0).SetInt64(value))
+	output.Finish(valueBytes)
 }
 
 //export executeOnSameContext
@@ -1148,6 +1172,9 @@ func executeOnSameContext(
 	host := core.GetVmContext(context)
 	runtime := host.Runtime()
 	metering := host.Metering()
+
+	gasToUse := metering.GasSchedule().DharitriAPICost.ExecuteOnSameContext
+	metering.UseGas(gasToUse)
 
 	send := runtime.GetSCAddress()
 	dest, err := runtime.MemLoad(addressOffset, core.AddressLen)
@@ -1168,13 +1195,13 @@ func executeOnSameContext(
 		argumentsLengthOffset,
 		dataOffset,
 	)
+
+	gasToUse = metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(actualLen)
+	metering.UseGas(gasToUse)
+
 	if core.WithFault(err, context, false) {
 		return 1
 	}
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.ExecuteOnSameContext
-	gasToUse += metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(actualLen)
-	metering.UseGas(gasToUse)
 
 	bigIntVal := big.NewInt(0).SetBytes(value)
 	contractCallInput := &vmcommon.ContractCallInput{
@@ -1213,6 +1240,9 @@ func executeOnDestContext(
 	runtime := host.Runtime()
 	metering := host.Metering()
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.ExecuteOnDestContext
+	metering.UseGas(gasToUse)
+
 	send := runtime.GetSCAddress()
 	dest, err := runtime.MemLoad(addressOffset, core.AddressLen)
 	if core.WithFault(err, context, false) {
@@ -1232,13 +1262,13 @@ func executeOnDestContext(
 		argumentsLengthOffset,
 		dataOffset,
 	)
+
+	gasToUse = metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(actualLen)
+	metering.UseGas(gasToUse)
+
 	if core.WithFault(err, context, false) {
 		return 1
 	}
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.ExecuteOnDestContext
-	gasToUse += metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(actualLen)
-	metering.UseGas(gasToUse)
 
 	bigIntVal := big.NewInt(0).SetBytes(value)
 	contractCallInput := &vmcommon.ContractCallInput{
@@ -1318,6 +1348,9 @@ func delegateExecution(
 	output := host.Output()
 	metering := host.Metering()
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.DelegateExecution
+	metering.UseGas(gasToUse)
+
 	address, err := runtime.MemLoad(addressOffset, core.HashLen)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return 1
@@ -1331,16 +1364,16 @@ func delegateExecution(
 		argumentsLengthOffset,
 		dataOffset,
 	)
+
+	gasToUse = metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(actualLen)
+	metering.UseGas(gasToUse)
+
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return 1
 	}
 
 	value := runtime.GetVMInput().CallValue
 	sender := runtime.GetVMInput().CallerAddr
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.DelegateExecution
-	gasToUse += metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(actualLen)
-	metering.UseGas(gasToUse)
 
 	err = output.Transfer(address, sender, 0, value, nil)
 	if err != nil {
@@ -1392,6 +1425,9 @@ func executeReadOnly(
 	output := host.Output()
 	metering := host.Metering()
 
+	gasToUse := metering.GasSchedule().DharitriAPICost.ExecuteReadOnly
+	metering.UseGas(gasToUse)
+
 	address, err := runtime.MemLoad(addressOffset, core.HashLen)
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return 1
@@ -1405,16 +1441,16 @@ func executeReadOnly(
 		argumentsLengthOffset,
 		dataOffset,
 	)
+
+	gasToUse = metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(actualLen)
+	metering.UseGas(gasToUse)
+
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return 1
 	}
 
 	value := runtime.GetVMInput().CallValue
 	sender := runtime.GetVMInput().CallerAddr
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.ExecuteReadOnly
-	gasToUse += metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(actualLen)
-	metering.UseGas(gasToUse)
 
 	err = output.Transfer(address, sender, 0, value, nil)
 	if err != nil {
@@ -1447,6 +1483,7 @@ func executeReadOnly(
 //export createContract
 func createContract(
 	context unsafe.Pointer,
+	gasLimit int64,
 	valueOffset int32,
 	codeOffset int32,
 	length int32,
@@ -1458,6 +1495,9 @@ func createContract(
 	host := core.GetVmContext(context)
 	runtime := host.Runtime()
 	metering := host.Metering()
+
+	gasToUse := metering.GasSchedule().DharitriAPICost.CreateContract
+	metering.UseGas(gasToUse)
 
 	sender := runtime.GetSCAddress()
 	value, err := runtime.MemLoad(valueOffset, core.BalanceLen)
@@ -1478,14 +1518,13 @@ func createContract(
 		argumentsLengthOffset,
 		dataOffset,
 	)
+
+	gasToUse = metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(actualLen)
+	metering.UseGas(gasToUse)
+
 	if core.WithFault(err, context, runtime.DharitriAPIErrorShouldFailExecution()) {
 		return 1
 	}
-
-	gasToUse := metering.GasSchedule().DharitriAPICost.CreateContract
-	gasToUse += metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(actualLen)
-	metering.UseGas(gasToUse)
-	gasLimit := metering.GasLeft()
 
 	contractCreate := &vmcommon.ContractCreateInput{
 		VMInput: vmcommon.VMInput{
@@ -1493,7 +1532,7 @@ func createContract(
 			Arguments:   data,
 			CallValue:   big.NewInt(0).SetBytes(value),
 			GasPrice:    0,
-			GasProvided: gasLimit,
+			GasProvided: metering.BoundGasLimit(gasLimit),
 		},
 		ContractCode: code,
 		// TODO: Receive code metadata as argument

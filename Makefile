@@ -9,6 +9,7 @@ build:
 core:
 	go build -o ./cmd/core/core ./cmd/core
 	cp ./cmd/core/core ./ipc/tests
+	cp ./cmd/core/core ${CORE_PATH}
 
 coredebug:
 ifndef COREDEBUG_PATH
@@ -57,7 +58,7 @@ ifndef SANDBOX
 	$(error SANDBOX variable is undefined)
 endif
 	rm -rf ${SANDBOX}/sc-delegation-rs
-	git clone --depth=1 --branch=master https://github.com/Dharitri-org/sc-delegation-rs.git ${SANDBOX}/sc-delegation-rs
+	git clone --depth=1 --branch=master https://github.com/Dharitri-org/sme-delegation-rs.git  ${SANDBOX}/sc-delegation-rs
 	rm -rf ${SANDBOX}/sc-delegation-rs/.git
 	moapy contract build ${SANDBOX}/sc-delegation-rs
 	moapy contract test --directory="tests" ${SANDBOX}/sc-delegation-rs
@@ -69,7 +70,7 @@ ifndef SANDBOX
 	$(error SANDBOX variable is undefined)
 endif
 	rm -rf ${SANDBOX}/sc-dns-rs
-	git clone --depth=1 --branch=master https://github.com/Dharitri-org/sc-dns-rs.git ${SANDBOX}/sc-dns-rs
+	git clone --depth=1 --branch=master https://github.com/Dharitri-org/sme-dns-rs.git ${SANDBOX}/sc-dns-rs
 	rm -rf ${SANDBOX}/sc-dns-rs/.git
 	moapy contract build ${SANDBOX}/sc-dns-rs
 	moapy contract test --directory="tests" ${SANDBOX}/sc-dns-rs
