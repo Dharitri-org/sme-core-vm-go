@@ -1,4 +1,4 @@
-# core-wasm-vm
+# sme-core-vm-go
 
 [![Build Status](https://travis-ci.com/Dharitri-org/sme-core-vm-go.svg?branch=master)](https://travis-ci.com/Dharitri-org/sme-core-vm-go)
 
