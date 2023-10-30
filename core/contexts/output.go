@@ -14,6 +14,7 @@ type outputContext struct {
 	host        core.VMHost
 	outputState *vmcommon.VMOutput
 	stateStack  []*vmcommon.VMOutput
+	codeUpdates map[string]struct{}
 }
 
 // NewOutputContext creates a new outputContext
@@ -30,6 +31,7 @@ func NewOutputContext(host core.VMHost) (*outputContext, error) {
 
 func (context *outputContext) InitState() {
 	context.outputState = newVMOutput()
+	context.codeUpdates = make(map[string]struct{})
 }
 
 func newVMOutput() *vmcommon.VMOutput {
@@ -120,6 +122,11 @@ func (context *outputContext) GetOutputAccount(address []byte) (*vmcommon.Output
 	return account, accountIsNew
 }
 
+func (context *outputContext) DeleteOutputAccount(address []byte) {
+	delete(context.outputState.OutputAccounts, string(address))
+	delete(context.codeUpdates, string(address))
+}
+
 func (context *outputContext) GetRefund() uint64 {
 	return uint64(context.outputState.GasRefund.Int64())
 }
@@ -192,6 +199,16 @@ func (context *outputContext) Transfer(destination []byte, sender []byte, gasLim
 		return core.ErrTransferInsufficientFunds
 	}
 
+	payable, err := context.host.Blockchain().IsPayable(destination)
+	if err != nil {
+		return err
+	}
+
+	hasValue := value.Cmp(big.NewInt(0)) == 1
+	if !payable && hasValue {
+		return core.ErrAccountNotPayable
+	}
+
 	senderAcc, _ := context.GetOutputAccount(sender)
 	destAcc, _ := context.GetOutputAccount(destination)
 
@@ -216,6 +233,8 @@ func (context *outputContext) AddTxValueToAccount(address []byte, value *big.Int
 // GetVMOutput updates the current VMOutput and returns it
 func (context *outputContext) GetVMOutput() *vmcommon.VMOutput {
 	context.outputState.GasRemaining = context.host.Metering().GasLeft()
+	context.removeNonUpdatedCode(context.outputState)
+
 	return context.outputState
 }
 
@@ -223,6 +242,9 @@ func (context *outputContext) DeployCode(input core.CodeDeployInput) {
 	newSCAccount, _ := context.GetOutputAccount(input.ContractAddress)
 	newSCAccount.Code = input.ContractCode
 	newSCAccount.CodeMetadata = input.ContractCodeMetadata
+
+	var empty struct{}
+	context.codeUpdates[string(input.ContractAddress)] = empty
 }
 
 func (context *outputContext) CreateVMOutputInCaseOfError(err error) *vmcommon.VMOutput {
@@ -247,6 +269,16 @@ func (context *outputContext) CreateVMOutputInCaseOfError(err error) *vmcommon.V
 		GasRefund:     big.NewInt(0),
 		ReturnCode:    returnCode,
 		ReturnMessage: message,
+	}
+}
+
+func (context *outputContext) removeNonUpdatedCode(vmOutput *vmcommon.VMOutput) {
+	for address, account := range vmOutput.OutputAccounts {
+		_, ok := context.codeUpdates[address]
+		if !ok {
+			account.Code = nil
+			account.CodeMetadata = nil
+		}
 	}
 }
 
@@ -296,8 +328,8 @@ func (context *outputContext) AddToActiveState(rightOutput *vmcommon.VMOutput) {
 		rightOutput.GasRefund.Add(rightOutput.GasRefund, context.outputState.GasRefund)
 	}
 
-	for address, rightAccount := range rightOutput.OutputAccounts {
-		leftAccount, ok := context.outputState.OutputAccounts[address]
+	for _, rightAccount := range rightOutput.OutputAccounts {
+		leftAccount, ok := context.outputState.OutputAccounts[string(rightAccount.Address)]
 		if !ok || rightAccount.BalanceDelta == nil {
 			continue
 		}
@@ -313,11 +345,12 @@ func mergeVMOutputs(leftOutput *vmcommon.VMOutput, rightOutput *vmcommon.VMOutpu
 	if leftOutput.OutputAccounts == nil {
 		leftOutput.OutputAccounts = make(map[string]*vmcommon.OutputAccount)
 	}
-	for address, rightAccount := range rightOutput.OutputAccounts {
-		leftAccount, ok := leftOutput.OutputAccounts[address]
+
+	for _, rightAccount := range rightOutput.OutputAccounts {
+		leftAccount, ok := leftOutput.OutputAccounts[string(rightAccount.Address)]
 		if !ok {
 			leftAccount = &vmcommon.OutputAccount{}
-			leftOutput.OutputAccounts[address] = leftAccount
+			leftOutput.OutputAccounts[string(rightAccount.Address)] = leftAccount
 		}
 		mergeOutputAccounts(leftAccount, rightAccount)
 	}
@@ -358,6 +391,9 @@ func mergeOutputAccounts(
 	}
 	if len(rightAccount.Code) > 0 {
 		leftAccount.Code = rightAccount.Code
+	}
+	if len(rightAccount.CodeMetadata) > 0 {
+		leftAccount.CodeMetadata = rightAccount.CodeMetadata
 	}
 	if len(rightAccount.Data) > 0 {
 		leftAccount.Data = rightAccount.Data

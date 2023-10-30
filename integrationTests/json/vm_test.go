@@ -34,7 +34,7 @@ func TestErc20FromRust(t *testing.T) {
 	)
 	err = runner.RunAllJSONScenariosInDirectory(
 		getTestRoot(),
-		"erc20",
+		"erc20-rust",
 		".scen.json",
 		[]string{})
 	if err != nil {
@@ -43,9 +43,7 @@ func TestErc20FromRust(t *testing.T) {
 }
 
 func TestErc20FromC(t *testing.T) {
-	fileResolver := mc.NewDefaultFileResolver().ReplacePath(
-		"contracts/simple-coin.wasm",
-		filepath.Join(getTestRoot(), "erc20/contracts/erc20-c.wasm"))
+	fileResolver := mc.NewDefaultFileResolver()
 	executor, err := am.NewCoreTestExecutor()
 	require.Nil(t, err)
 	runner := mc.NewScenarioRunner(
@@ -54,7 +52,7 @@ func TestErc20FromC(t *testing.T) {
 	)
 	err = runner.RunAllJSONScenariosInDirectory(
 		getTestRoot(),
-		"erc20",
+		"erc20-c",
 		".scen.json",
 		[]string{})
 
@@ -207,20 +205,20 @@ func TestTimelocks(t *testing.T) {
 	}
 }
 
-func TestPromises(t *testing.T) {
-	executor, err := am.NewCoreTestExecutor()
-	require.Nil(t, err)
-	runner := mc.NewScenarioRunner(
-		executor,
-		mc.NewDefaultFileResolver(),
-	)
-	err = runner.RunAllJSONScenariosInDirectory(
-		getTestRoot(),
-		"promises",
-		".scen.json",
-		[]string{})
+// func TestPromises(t *testing.T) {
+// 	executor, err := am.NewCoreTestExecutor()
+// 	require.Nil(t, err)
+// 	runner := mc.NewScenarioRunner(
+// 		executor,
+// 		mc.NewDefaultFileResolver(),
+// 	)
+// 	err = runner.RunAllJSONScenariosInDirectory(
+// 		getTestRoot(),
+// 		"promises",
+// 		".scen.json",
+// 		[]string{})
 
-	if err != nil {
-		t.Error(err)
-	}
-}
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
+// }

@@ -37,6 +37,7 @@ type VMHost interface {
 	EthereumCallData() []byte
 	GetAPIMethods() *wasmer.Imports
 	GetProtocolBuiltinFunctions() vmcommon.FunctionNames
+	IsBuiltinFunctionName(functionName string) bool
 }
 
 type BlockchainContext interface {
@@ -64,6 +65,7 @@ type BlockchainContext interface {
 	GetOwnerAddress() ([]byte, error)
 	GetShardOfAddress(addr []byte) uint32
 	IsSmartContract(addr []byte) bool
+	IsPayable(address []byte) (bool, error)
 }
 
 type RuntimeContext interface {
@@ -83,6 +85,7 @@ type RuntimeContext interface {
 	ExtractCodeUpgradeFromArgs() ([]byte, []byte, error)
 	SignalUserError(message string)
 	FailExecution(err error)
+	MustVerifyNextContractCode()
 	SetRuntimeBreakpointValue(value BreakpointValue)
 	GetRuntimeBreakpointValue() BreakpointValue
 	GetAsyncCallInfo() *AsyncCallInfo
@@ -97,10 +100,9 @@ type RuntimeContext interface {
 	ReadOnly() bool
 	SetReadOnly(readOnly bool)
 	StartWasmerInstance(contract []byte, gasLimit uint64) error
+	CleanWasmerInstance()
 	SetMaxInstanceCount(uint64)
 	VerifyContractCode() error
-	SetInstanceContext(instCtx *wasmer.InstanceContext)
-	GetInstanceContext() *wasmer.InstanceContext
 	GetInstanceExports() wasmer.ExportsMap
 	GetInitFunction() wasmer.ExportedFunctionCallback
 	GetFunctionToCall() (wasmer.ExportedFunctionCallback, error)
@@ -108,8 +110,6 @@ type RuntimeContext interface {
 	SetPointsUsed(gasPoints uint64)
 	MemStore(offset int32, data []byte) error
 	MemLoad(offset int32, length int32) ([]byte, error)
-	CleanInstance()
-	SetInstanceContextID(id int)
 	DharitriAPIErrorShouldFailExecution() bool
 	CryptoAPIErrorShouldFailExecution() bool
 	BigIntAPIErrorShouldFailExecution() bool
@@ -131,6 +131,7 @@ type OutputContext interface {
 	AddToActiveState(rightOutput *vmcommon.VMOutput)
 
 	GetOutputAccount(address []byte) (*vmcommon.OutputAccount, bool)
+	DeleteOutputAccount(address []byte)
 	WriteLog(address []byte, topics [][]byte, data []byte)
 	Transfer(destination []byte, sender []byte, gasLimit uint64, value *big.Int, input []byte) error
 	SelfDestruct(address []byte, beneficiary []byte)
@@ -179,6 +180,7 @@ type StorageContext interface {
 	SetAddress(address []byte)
 	GetStorageUpdates(address []byte) map[string]*vmcommon.StorageUpdate
 	GetStorage(key []byte) []byte
+	GetStorageUnmetered(key []byte) []byte
 	SetStorage(key []byte, value []byte) (StorageStatus, error)
 }
 

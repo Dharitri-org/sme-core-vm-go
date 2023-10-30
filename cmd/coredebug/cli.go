@@ -213,6 +213,7 @@ func initializeCLI(facade *coredebug.DebugFacade) *cli.App {
 				flagImpersonated,
 				flagFunction,
 				flagArguments,
+				flagGasLimit,
 			},
 		},
 		{

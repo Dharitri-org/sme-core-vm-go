@@ -63,7 +63,7 @@ func NewCoreVM(
 
 	var err error
 
-	imports, err := dharitriapi.DharitriEiImports()
+	imports, err := dharitriapi.DharitriEIImports()
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +196,7 @@ func (host *vmHost) ClearContextStateStack() {
 }
 
 func (host *vmHost) Clean() {
-	host.runtimeContext.CleanInstance()
+	host.runtimeContext.CleanWasmerInstance()
 	core.RemoveAllHostContexts()
 }
 

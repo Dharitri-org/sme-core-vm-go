@@ -31,17 +31,8 @@ func (host *vmHost) handleAsyncCallBreakpoint() error {
 	// Cross-shard calls for built-in functions must be executed in both the
 	// sender and destination shards.
 	if execMode == core.AsyncBuiltinFunc {
-		builtinFuncVMOutput, err := host.executeSyncDestinationCall(asyncCallInfo)
-		if err != nil {
-			return err
-		}
-
-		err = host.processCallbackVMOutput(builtinFuncVMOutput, err)
-		if err != nil {
-			return err
-		}
-
-		return host.sendAsyncCallToDestination(asyncCallInfo)
+		_, err := host.executeSyncDestinationCall(asyncCallInfo)
+		return err
 	}
 
 	// Start calling the destination SC, synchronously.
@@ -78,7 +69,7 @@ func (host *vmHost) determineAsyncCallExecutionMode(asyncCallInfo *core.AsyncCal
 	shardOfDest := blockchain.GetShardOfAddress(asyncCallInfo.Destination)
 	sameShard := shardOfSC == shardOfDest
 
-	if host.isBuiltinFunctionName(functionName) {
+	if host.IsBuiltinFunctionName(functionName) {
 		if sameShard {
 			return core.SyncCall, nil
 		}
@@ -530,7 +521,7 @@ func (host *vmHost) processCallbackStack() error {
 	storage := host.Storage()
 
 	storageKey := core.CustomStorageKey(core.AsyncDataPrefix, runtime.GetOriginalTxHash())
-	buff := storage.GetStorage(storageKey)
+	buff := storage.GetStorageUnmetered(storageKey)
 	if len(buff) == 0 {
 		return nil
 	}
@@ -702,7 +693,7 @@ func (host *vmHost) getCurrentAsyncInfo() (*core.AsyncContextInfo, error) {
 
 	asyncInfo := &core.AsyncContextInfo{}
 	storageKey := core.CustomStorageKey(core.AsyncDataPrefix, runtime.GetOriginalTxHash())
-	buff := storage.GetStorage(storageKey)
+	buff := storage.GetStorageUnmetered(storageKey)
 	if len(buff) == 0 {
 		return asyncInfo, nil
 	}

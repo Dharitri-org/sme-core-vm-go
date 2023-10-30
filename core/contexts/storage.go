@@ -71,13 +71,30 @@ func (context *storageContext) GetStorageUpdates(address []byte) map[string]*vmc
 }
 
 func (context *storageContext) GetStorage(key []byte) []byte {
-	storageUpdates := context.GetStorageUpdates(context.address)
-	if storageUpdate, ok := storageUpdates[string(key)]; ok {
-		return storageUpdate.Data
+	metering := context.host.Metering()
+
+	extraBytes := len(key) - core.AddressLen
+	if extraBytes > 0 {
+		gasToUse := metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(extraBytes)
+		metering.UseGas(gasToUse)
 	}
 
-	value, _ := context.blockChainHook.GetStorageData(context.address, key)
-	if value != nil {
+	value := context.GetStorageUnmetered(key)
+
+	gasToUse := metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(len(value))
+	metering.UseGas(gasToUse)
+
+	return value
+}
+
+func (context *storageContext) GetStorageUnmetered(key []byte) []byte {
+	var value []byte
+
+	storageUpdates := context.GetStorageUpdates(context.address)
+	if storageUpdate, ok := storageUpdates[string(key)]; ok {
+		value = storageUpdate.Data
+	} else {
+		value, _ = context.blockChainHook.GetStorageData(context.address, key)
 		storageUpdates[string(key)] = &vmcommon.StorageUpdate{
 			Offset: key,
 			Data:   value,
@@ -88,7 +105,7 @@ func (context *storageContext) GetStorage(key []byte) []byte {
 }
 
 func (context *storageContext) isDharitriReservedKey(key []byte) bool {
-	return bytes.HasPrefix(key, []byte(context.dharitriProtectedKeyPrefix))
+	return bytes.HasPrefix(key, context.dharitriProtectedKeyPrefix)
 }
 
 func (context *storageContext) SetStorage(key []byte, value []byte) (core.StorageStatus, error) {
@@ -101,6 +118,13 @@ func (context *storageContext) SetStorage(key []byte, value []byte) (core.Storag
 	}
 
 	metering := context.host.Metering()
+
+	extraBytes := len(key) - core.AddressLen
+	if extraBytes > 0 {
+		gasToUse := metering.GasSchedule().BaseOperationCost.DataCopyPerByte * uint64(extraBytes)
+		metering.UseGas(gasToUse)
+	}
+
 	var zero []byte
 	strKey := string(key)
 	length := len(value)
@@ -108,7 +132,7 @@ func (context *storageContext) SetStorage(key []byte, value []byte) (core.Storag
 	var oldValue []byte
 	storageUpdates := context.GetStorageUpdates(context.address)
 	if update, ok := storageUpdates[strKey]; !ok {
-		oldValue = context.GetStorage(key)
+		oldValue = context.GetStorageUnmetered(key)
 		storageUpdates[strKey] = &vmcommon.StorageUpdate{
 			Offset: key,
 			Data:   oldValue,

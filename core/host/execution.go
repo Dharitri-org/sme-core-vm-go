@@ -28,15 +28,15 @@ func (host *vmHost) doRunSmartContractCreate(input *vmcommon.ContractCreateInput
 		ContractAddress:      address,
 	}
 
-	vmOutput, err := host.performCodeDeploy(codeDeployInput)
+	vmOutput, err := host.performCodeDeployment(codeDeployInput)
 	if err != nil {
 		return output.CreateVMOutputInCaseOfError(err)
 	}
 	return vmOutput
 }
 
-func (host *vmHost) performCodeDeploy(input core.CodeDeployInput) (*vmcommon.VMOutput, error) {
-	log.Trace("performCodeDeploy", "address", input.ContractAddress, "len(code)", len(input.ContractCode), "metadata", input.ContractCodeMetadata)
+func (host *vmHost) performCodeDeployment(input core.CodeDeployInput) (*vmcommon.VMOutput, error) {
+	log.Trace("performCodeDeployment", "address", input.ContractAddress, "len(code)", len(input.ContractCode), "metadata", input.ContractCodeMetadata)
 
 	_, _, metering, output, runtime, _ := host.GetContexts()
 
@@ -46,21 +46,14 @@ func (host *vmHost) performCodeDeploy(input core.CodeDeployInput) (*vmcommon.VMO
 		return nil, err
 	}
 
+	runtime.MustVerifyNextContractCode()
+
 	vmInput := runtime.GetVMInput()
 	err = runtime.StartWasmerInstance(input.ContractCode, vmInput.GasProvided)
 	if err != nil {
-		log.Debug("performCodeDeploy/StartWasmerInstance", "err", err)
+		log.Debug("performCodeDeployment/StartWasmerInstance", "err", err)
 		return nil, core.ErrContractInvalid
 	}
-
-	err = runtime.VerifyContractCode()
-	if err != nil {
-		log.Debug("performCodeDeploy/VerifyContractCode", "err", err)
-		return nil, core.ErrContractInvalid
-	}
-
-	idContext := core.AddHostContext(host)
-	runtime.SetInstanceContextID(idContext)
 
 	err = host.callInitFunction()
 	if err != nil {
@@ -69,6 +62,7 @@ func (host *vmHost) performCodeDeploy(input core.CodeDeployInput) (*vmcommon.VMO
 
 	output.DeployCode(input)
 	vmOutput := output.GetVMOutput()
+	runtime.CleanWasmerInstance()
 	return vmOutput, nil
 }
 
@@ -93,7 +87,7 @@ func (host *vmHost) doRunSmartContractUpgrade(input *vmcommon.ContractCallInput)
 		ContractAddress:      input.RecipientAddr,
 	}
 
-	vmOutput, err := host.performCodeDeploy(codeDeployInput)
+	vmOutput, err := host.performCodeDeployment(codeDeployInput)
 	if err != nil {
 		return output.CreateVMOutputInCaseOfError(err)
 	}
@@ -126,9 +120,6 @@ func (host *vmHost) doRunSmartContractCall(input *vmcommon.ContractCallInput) (v
 		return output.CreateVMOutputInCaseOfError(core.ErrContractInvalid)
 	}
 
-	idContext := core.AddHostContext(host)
-	runtime.SetInstanceContextID(idContext)
-
 	err = host.callSCMethod()
 	if err != nil {
 		return output.CreateVMOutputInCaseOfError(err)
@@ -137,6 +128,7 @@ func (host *vmHost) doRunSmartContractCall(input *vmcommon.ContractCallInput) (v
 	metering.UnlockGasIfAsyncStep()
 
 	vmOutput = output.GetVMOutput()
+	runtime.CleanWasmerInstance()
 	return
 }
 
@@ -269,98 +261,77 @@ func (host *vmHost) isInitFunctionBeingCalled() bool {
 
 func (host *vmHost) isBuiltinFunctionBeingCalled() bool {
 	functionName := host.Runtime().Function()
-	return host.isBuiltinFunctionName(functionName)
+	return host.IsBuiltinFunctionName(functionName)
 }
 
-func (host *vmHost) isBuiltinFunctionName(functionName string) bool {
+func (host *vmHost) IsBuiltinFunctionName(functionName string) bool {
 	_, ok := host.protocolBuiltinFunctions[functionName]
 	return ok
 }
 
-func (host *vmHost) CreateNewContract(input *vmcommon.ContractCreateInput) ([]byte, error) {
-	log.Trace("CreateNewContract", "len(code)", len(input.ContractCode), "metadata", input.ContractCodeMetadata)
+func (host *vmHost) CreateNewContract(input *vmcommon.ContractCreateInput) (newContractAddress []byte, err error) {
+	newContractAddress = nil
+	err = nil
+
+	defer func() {
+		if err != nil {
+			newContractAddress = nil
+		}
+	}()
 
 	_, blockchain, metering, output, runtime, _ := host.GetContexts()
-
-	// Use all gas initially. In case of successful deployment, the unused gas
-	// will be restored.
-	initialGasProvided := input.GasProvided
-	metering.UseGas(initialGasProvided)
-
-	if runtime.ReadOnly() {
-		return nil, core.ErrInvalidCallOnReadOnlyMode
-	}
-
-	runtime.PushState()
-
-	runtime.SetVMInput(&input.VMInput)
-	address, err := blockchain.NewAddress(input.CallerAddr)
-	if err != nil {
-		runtime.PopSetActiveState()
-		return nil, err
-	}
-
-	err = output.Transfer(address, input.CallerAddr, 0, input.CallValue, nil)
-	if err != nil {
-		runtime.PopSetActiveState()
-		return nil, err
-	}
-
-	blockchain.IncreaseNonce(input.CallerAddr)
-	runtime.SetSCAddress(address)
 
 	codeDeployInput := core.CodeDeployInput{
 		ContractCode:         input.ContractCode,
 		ContractCodeMetadata: input.ContractCodeMetadata,
-		ContractAddress:      address,
+		ContractAddress:      nil,
 	}
-
 	err = metering.DeductInitialGasForIndirectDeployment(codeDeployInput)
 	if err != nil {
-		runtime.PopSetActiveState()
-		return nil, err
+		return
 	}
 
-	idContext := core.AddHostContext(host)
-	runtime.PushInstance()
+	if runtime.ReadOnly() {
+		err = core.ErrInvalidCallOnReadOnlyMode
+		return
+	}
 
-	gasForDeployment := runtime.GetVMInput().GasProvided
-	err = runtime.StartWasmerInstance(input.ContractCode, gasForDeployment)
+	newContractAddress, err = blockchain.NewAddress(input.CallerAddr)
 	if err != nil {
-		runtime.PopInstance()
-		runtime.PopSetActiveState()
-		core.RemoveHostContext(idContext)
-		return nil, err
+		return
 	}
 
-	err = runtime.VerifyContractCode()
-	if err != nil {
-		runtime.PopInstance()
-		runtime.PopSetActiveState()
-		core.RemoveHostContext(idContext)
-		return nil, err
+	if blockchain.AccountExists(newContractAddress) {
+		err = core.ErrDeploymentOverExistingAccount
+		return
 	}
 
-	runtime.SetInstanceContextID(idContext)
-
-	err = host.callInitFunction()
-	if err != nil {
-		runtime.PopInstance()
-		runtime.PopSetActiveState()
-		core.RemoveHostContext(idContext)
-		return nil, err
-	}
-
+	codeDeployInput.ContractAddress = newContractAddress
 	output.DeployCode(codeDeployInput)
 
-	gasToRestoreToCaller := metering.GasLeft()
+	defer func() {
+		if err != nil {
+			output.DeleteOutputAccount(newContractAddress)
+		}
+	}()
 
-	runtime.PopInstance()
-	runtime.PopSetActiveState()
-	core.RemoveHostContext(idContext)
+	runtime.MustVerifyNextContractCode()
 
-	metering.RestoreGas(gasToRestoreToCaller)
-	return address, nil
+	initCallInput := &vmcommon.ContractCallInput{
+		RecipientAddr:     newContractAddress,
+		Function:          core.InitFunctionName,
+		AllowInitFunction: true,
+		VMInput:           input.VMInput,
+	}
+	vmOutput, _, err := host.ExecuteOnDestContext(initCallInput)
+	if err != nil {
+		return
+	}
+
+	metering.RestoreGas(vmOutput.GasRemaining)
+	blockchain.IncreaseNonce(input.CallerAddr)
+
+	return
 }
 
 // TODO: Add support for indirect smart contract upgrades.
@@ -376,7 +347,7 @@ func (host *vmHost) execute(input *vmcommon.ContractCallInput) error {
 	initialGasProvided := input.GasProvided
 	metering.UseGas(initialGasProvided)
 
-	if host.isInitFunctionBeingCalled() {
+	if host.isInitFunctionBeingCalled() && !input.AllowInitFunction {
 		return core.ErrInitFuncCalledInRun
 	}
 
@@ -390,29 +361,23 @@ func (host *vmHost) execute(input *vmcommon.ContractCallInput) error {
 		return err
 	}
 
-	idContext := core.AddHostContext(host)
 	runtime.PushInstance()
 
 	gasForExecution := runtime.GetVMInput().GasProvided
 	err = runtime.StartWasmerInstance(contract, gasForExecution)
 	if err != nil {
 		runtime.PopInstance()
-		core.RemoveHostContext(idContext)
 		return err
 	}
-
-	runtime.SetInstanceContextID(idContext)
 
 	err = host.callSCMethodIndirect()
 	if err != nil {
 		runtime.PopInstance()
-		core.RemoveHostContext(idContext)
 		return err
 	}
 
 	if output.ReturnCode() != vmcommon.Ok {
 		runtime.PopInstance()
-		core.RemoveHostContext(idContext)
 		return core.ErrReturnCodeNotOk
 	}
 
@@ -422,7 +387,6 @@ func (host *vmHost) execute(input *vmcommon.ContractCallInput) error {
 
 	runtime.PopInstance()
 	metering.RestoreGas(gasToRestoreToCaller)
-	core.RemoveHostContext(idContext)
 
 	return nil
 }
@@ -436,10 +400,6 @@ func (host *vmHost) callSCMethodIndirect() error {
 	_, err = function()
 	if err != nil {
 		err = host.handleBreakpointIfAny(err)
-	}
-
-	if err != nil {
-		return err
 	}
 
 	return err

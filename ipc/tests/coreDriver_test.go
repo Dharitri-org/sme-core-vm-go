@@ -101,4 +101,3 @@ func newDriver(tb testing.TB, blockchain *mock.BlockchainHookStub) *nodepart.Cor
 	require.False(tb, driver.IsClosed())
 	return driver
 }
-

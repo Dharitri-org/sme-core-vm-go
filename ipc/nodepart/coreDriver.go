@@ -214,7 +214,7 @@ func (driver *CoreDriver) RunSmartContractCreate(input *vmcommon.ContractCreateI
 	}
 
 	typedResponse := response.(*common.MessageContractResponse)
-	vmOutput, err := typedResponse.VMOutput, response.GetError()
+	vmOutput, err := typedResponse.SerializableVMOutput.ConvertToVMOutput(), response.GetError()
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +241,7 @@ func (driver *CoreDriver) RunSmartContractCall(input *vmcommon.ContractCallInput
 	}
 
 	typedResponse := response.(*common.MessageContractResponse)
-	vmOutput, err := typedResponse.VMOutput, response.GetError()
+	vmOutput, err := typedResponse.SerializableVMOutput.ConvertToVMOutput(), response.GetError()
 	if err != nil {
 		return nil, err
 	}
