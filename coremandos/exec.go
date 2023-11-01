@@ -7,9 +7,8 @@ import (
 	vmcommon "github.com/Dharitri-org/sme-vm-common"
 	vmi "github.com/Dharitri-org/sme-vm-common"
 	worldhook "github.com/Dharitri-org/sme-vm-util/mock-hook-blockchain"
-	cryptohook "github.com/Dharitri-org/sme-vm-util/mock-hook-crypto"
 	mc "github.com/Dharitri-org/sme-vm-util/test-util/mandos/controller"
-	mjparse "github.com/Dharitri-org/sme-vm-util/test-util/mandos/json/parse"
+	fr "github.com/Dharitri-org/sme-vm-util/test-util/mandos/json/fileresolver"
 )
 
 // TestVMType is the VM type argument we use in tests.
@@ -17,7 +16,7 @@ var TestVMType = []byte{0, 0}
 
 // CoreTestExecutor parses, interprets and executes both .test.json tests and .scen.json scenarios with Core.
 type CoreTestExecutor struct {
-	fileResolver mjparse.FileResolver
+	fileResolver fr.FileResolver
 	World        *worldhook.BlockchainHookMock
 	vm           vmi.VMExecutionHandler
 	checkGas     bool
@@ -33,7 +32,7 @@ func NewCoreTestExecutor() (*CoreTestExecutor, error) {
 
 	blockGasLimit := uint64(10000000)
 	gasSchedule := config.MakeGasMapForTests()
-	vm, err := coreHost.NewCoreVM(world, cryptohook.KryptoHookMockInstance, &core.VMHostParameters{
+	vm, err := coreHost.NewCoreVM(world, &core.VMHostParameters{
 		VMType:                     TestVMType,
 		BlockGasLimit:              blockGasLimit,
 		GasSchedule:                gasSchedule,

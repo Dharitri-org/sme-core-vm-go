@@ -2,6 +2,7 @@ package mock
 
 import (
 	"github.com/Dharitri-org/sme-core-vm-go/core"
+	"github.com/Dharitri-org/sme-core-vm-go/crypto"
 	"github.com/Dharitri-org/sme-core-vm-go/wasmer"
 	vmcommon "github.com/Dharitri-org/sme-vm-common"
 )
@@ -10,7 +11,7 @@ var _ core.VMHost = (*VmHostMock)(nil)
 
 type VmHostMock struct {
 	BlockChainHook vmcommon.BlockchainHook
-	CryptoHook     vmcommon.CryptoHook
+	CryptoHook     crypto.VMCrypto
 
 	EthInput []byte
 
@@ -25,7 +26,7 @@ type VmHostMock struct {
 	IsBuiltinFunc bool
 }
 
-func (host *VmHostMock) Crypto() vmcommon.CryptoHook {
+func (host *VmHostMock) Crypto() crypto.VMCrypto {
 	return host.CryptoHook
 }
 
@@ -51,6 +52,10 @@ func (host *VmHostMock) Storage() core.StorageContext {
 
 func (host *VmHostMock) BigInt() core.BigIntContext {
 	return host.BigIntContext
+}
+
+func (host *VmHostMock) IsCoreV2Enabled() bool {
+	return true
 }
 
 func (host *VmHostMock) CreateNewContract(input *vmcommon.ContractCreateInput) ([]byte, error) {

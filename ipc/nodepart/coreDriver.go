@@ -120,7 +120,10 @@ func (driver *CoreDriver) startCore() error {
 		return err
 	}
 
-	driver.logsPart.StartLoop(coreStdout, coreStderr)
+	err = driver.logsPart.StartLoop(coreStdout, coreStderr)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -193,6 +196,27 @@ func (driver *CoreDriver) IsClosed() bool {
 
 	err = process.Signal(syscall.Signal(0))
 	return err != nil
+}
+
+func (driver *CoreDriver) GetVersion() (string, error) {
+	log.Trace("GetVersion")
+
+	err := driver.RestartCoreIfNecessary()
+	if err != nil {
+		return "", common.WrapCriticalError(err)
+	}
+
+	request := common.NewMessageVersionRequest()
+	response, err := driver.part.StartLoop(request)
+	if err != nil {
+		log.Warn("GetVersion", "err", err)
+		_ = driver.Close()
+		return "", common.WrapCriticalError(err)
+	}
+
+	typedResponse := response.(*common.MessageVersionResponse)
+
+	return typedResponse.Version, nil
 }
 
 // RunSmartContractCreate sends a deploy request to Core and waits for the output

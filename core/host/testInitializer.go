@@ -25,6 +25,8 @@ var userAddress = []byte("userAccount.....................")
 var parentAddress = []byte("parentSC........................")
 var childAddress = []byte("childSC.........................")
 
+var CustomGasSchedule = config.GasScheduleMap(nil)
+
 // GetSCCode retrieves the bytecode of a WASM module from a file
 func GetSCCode(fileName string) []byte {
 	code, err := ioutil.ReadFile(filepath.Clean(fileName))
@@ -42,8 +44,7 @@ func GetTestSCCode(scName string, prefixToTestSCs string) []byte {
 }
 
 // DefaultTestCoreForDeployment creates an Core vmHost configured for testing deployments
-func DefaultTestCoreForDeployment(t *testing.T, ownerNonce uint64, newAddress []byte) *vmHost {
-	mockCryptoHook := &mock.CryptoHookMock{}
+func DefaultTestCoreForDeployment(t *testing.T, _ uint64, newAddress []byte) *vmHost {
 	stubBlockchainHook := &mock.BlockchainHookStub{}
 	stubBlockchainHook.GetUserAccountCalled = func(address []byte) (vmcommon.UserAccountHandler, error) {
 		return &mock.AccountMock{
@@ -54,12 +55,11 @@ func DefaultTestCoreForDeployment(t *testing.T, ownerNonce uint64, newAddress []
 		return newAddress, nil
 	}
 
-	host, _ := DefaultTestCore(t, stubBlockchainHook, mockCryptoHook)
+	host, _ := DefaultTestCore(t, stubBlockchainHook)
 	return host
 }
 
 func DefaultTestCoreForCall(tb testing.TB, code []byte, balance *big.Int) (*vmHost, *mock.BlockchainHookStub) {
-	mockCryptoHook := &mock.CryptoHookMock{}
 	stubBlockchainHook := &mock.BlockchainHookStub{}
 	stubBlockchainHook.GetUserAccountCalled = func(scAddress []byte) (vmcommon.UserAccountHandler, error) {
 		if bytes.Equal(scAddress, parentAddress) {
@@ -71,13 +71,12 @@ func DefaultTestCoreForCall(tb testing.TB, code []byte, balance *big.Int) (*vmHo
 		return nil, errAccountNotFound
 	}
 
-	host, _ := DefaultTestCore(tb, stubBlockchainHook, mockCryptoHook)
+	host, _ := DefaultTestCore(tb, stubBlockchainHook)
 	return host, stubBlockchainHook
 }
 
 // DefaultTestCoreForTwoSCs creates an Core vmHost configured for testing calls between 2 SmartContracts
 func DefaultTestCoreForTwoSCs(t *testing.T, parentCode []byte, childCode []byte, parentSCBalance *big.Int) (*vmHost, *mock.BlockchainHookStub) {
-	mockCryptoHook := &mock.CryptoHookMock{}
 	stubBlockchainHook := &mock.BlockchainHookStub{}
 
 	stubBlockchainHook.GetUserAccountCalled = func(scAddress []byte) (vmcommon.UserAccountHandler, error) {
@@ -96,17 +95,23 @@ func DefaultTestCoreForTwoSCs(t *testing.T, parentCode []byte, childCode []byte,
 		return nil, errAccountNotFound
 	}
 
-	host, _ := DefaultTestCore(t, stubBlockchainHook, mockCryptoHook)
+	host, _ := DefaultTestCore(t, stubBlockchainHook)
 	return host, stubBlockchainHook
 }
 
-func DefaultTestCore(tb testing.TB, blockchain vmcommon.BlockchainHook, crypto vmcommon.CryptoHook) (*vmHost, error) {
-	host, err := NewCoreVM(blockchain, crypto, &core.VMHostParameters{
+func DefaultTestCore(tb testing.TB, blockchain vmcommon.BlockchainHook) (*vmHost, error) {
+	gasSchedule := CustomGasSchedule
+	if gasSchedule == nil {
+		gasSchedule = config.MakeGasMapForTests()
+	}
+
+	host, err := NewCoreVM(blockchain, &core.VMHostParameters{
 		VMType:                     defaultVMType,
 		BlockGasLimit:              uint64(1000),
-		GasSchedule:                config.MakeGasMapForTests(),
+		GasSchedule:                gasSchedule,
 		ProtocolBuiltinFunctions:   make(vmcommon.FunctionNames),
 		DharitriProtectedKeyPrefix: []byte("DHARITRI"),
+		UseWarmInstance:            false,
 	})
 	require.Nil(tb, err)
 	require.NotNil(tb, host)
@@ -176,7 +181,14 @@ func AddNewOutputAccount(vmOutput *vmcommon.VMOutput, address []byte, balanceDel
 		Balance:        nil,
 		StorageUpdates: make(map[string]*vmcommon.StorageUpdate),
 		Code:           nil,
-		Data:           data,
+	}
+	if data != nil {
+		account.OutputTransfers = []vmcommon.OutputTransfer{
+			{
+				Data:  data,
+				Value: big.NewInt(balanceDelta),
+			},
+		}
 	}
 	vmOutput.OutputAccounts[string(address)] = account
 	return account
@@ -212,23 +224,6 @@ func OpenFile(relativePath string) (*os.File, error) {
 	}
 
 	return f, nil
-}
-
-// LoadTomlFile method to open and decode toml file
-func LoadTomlFile(dest interface{}, relativePath string) error {
-	f, err := OpenFile(relativePath)
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		err = f.Close()
-		if err != nil {
-			fmt.Printf("cannot close file: %s", err.Error())
-		}
-	}()
-
-	return toml.NewDecoder(f).Decode(dest)
 }
 
 // LoadTomlFileToMap opens and decodes a toml file as a map[string]interface{}

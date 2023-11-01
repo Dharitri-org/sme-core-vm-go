@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-var ErrFunctionRunError = errors.New("function run error")
+var ErrGasUsageError = errors.New("gas use error")
 
 var ErrReturnCodeNotOk = errors.New("return not is not ok")
 
@@ -69,6 +69,8 @@ var ErrArgIndexOutOfRange = errors.New("argument index out of range")
 
 var ErrArgOutOfRange = errors.New("argument out of range")
 
+var ErrStorageValueOutOfRange = errors.New("storage value out of range")
+
 var ErrDivZero = errors.New("division by 0")
 
 var ErrBitwiseNegative = errors.New("bitwise operations only allowed on positive integers")
@@ -79,8 +81,18 @@ var ErrAsyncCallsDisallowed = errors.New("async calls disallowed")
 
 var ErrAsyncContextDoesNotExist = errors.New("async context does not exist")
 
+var ErrNilCallbackVMOutput = errors.New("nil callback VMOutput")
+
 var ErrInvalidAccount = errors.New("account does not exist")
 
 var ErrDeploymentOverExistingAccount = errors.New("cannot deploy over existing account")
 
 var ErrAccountNotPayable = errors.New("sending value to non payable contract")
+
+var ErrInvalidPublicKeySize = errors.New("invalid public key size")
+
+var ErrNilCallbackFunction = errors.New("nil callback function")
+
+var ErrUpgradeNotAllowed = errors.New("upgrade not allowed")
+
+var ErrNilContract = errors.New("nil contract")

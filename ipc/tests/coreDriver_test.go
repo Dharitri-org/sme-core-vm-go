@@ -83,6 +83,17 @@ func BenchmarkCoreDriver_RestartCoreIfNecessary(b *testing.B) {
 	}
 }
 
+func TestCoreDriver_GetVersion(t *testing.T) {
+	// This test requires `make core` before running, or must be run directly
+	// with `make test`
+	blockchain := &mock.BlockchainHookStub{}
+	driver := newDriver(t, blockchain)
+	version, err := driver.GetVersion()
+	require.Nil(t, err)
+	require.NotZero(t, len(version))
+	require.NotEqual(t, "undefined", version)
+}
+
 func newDriver(tb testing.TB, blockchain *mock.BlockchainHookStub) *nodepart.CoreDriver {
 	driver, err := nodepart.NewCoreDriver(
 		blockchain,

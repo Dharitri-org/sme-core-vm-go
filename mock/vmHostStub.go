@@ -2,6 +2,7 @@ package mock
 
 import (
 	"github.com/Dharitri-org/sme-core-vm-go/core"
+	"github.com/Dharitri-org/sme-core-vm-go/crypto"
 	"github.com/Dharitri-org/sme-core-vm-go/wasmer"
 	vmcommon "github.com/Dharitri-org/sme-vm-common"
 )
@@ -14,7 +15,7 @@ type VmHostStub struct {
 	PopStateCalled        func()
 	ClearStateStackCalled func()
 
-	CryptoCalled                      func() vmcommon.CryptoHook
+	CryptoCalled                      func() crypto.VMCrypto
 	BlockchainCalled                  func() core.BlockchainContext
 	RuntimeCalled                     func() core.RuntimeContext
 	BigIntCalled                      func() core.BigIntContext
@@ -54,7 +55,7 @@ func (vhs *VmHostStub) ClearStateStack() {
 	}
 }
 
-func (vhs *VmHostStub) Crypto() vmcommon.CryptoHook {
+func (vhs *VmHostStub) Crypto() crypto.VMCrypto {
 	if vhs.CryptoCalled != nil {
 		return vhs.CryptoCalled()
 	}
@@ -80,6 +81,10 @@ func (vhs *VmHostStub) BigInt() core.BigIntContext {
 		return vhs.BigIntCalled()
 	}
 	return nil
+}
+
+func (vhs *VmHostStub) IsCoreV2Enabled() bool {
+	return true
 }
 
 func (vhs *VmHostStub) Output() core.OutputContext {

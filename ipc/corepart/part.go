@@ -19,10 +19,12 @@ type CorePart struct {
 	Messenger *CoreMessenger
 	VMHost    vmcommon.VMExecutionHandler
 	Repliers  []common.MessageReplier
+	Version   string
 }
 
 // NewCorePart creates the Core part
 func NewCorePart(
+	version string,
 	input *os.File,
 	output *os.File,
 	vmHostParameters *core.VMHostParameters,
@@ -30,11 +32,9 @@ func NewCorePart(
 ) (*CorePart, error) {
 	messenger := NewCoreMessenger(input, output, marshalizer)
 	blockchain := NewBlockchainHookGateway(messenger)
-	crypto := NewCryptoHookGateway()
 
 	newCoreHost, err := host.NewCoreVM(
 		blockchain,
-		crypto,
 		vmHostParameters,
 	)
 	if err != nil {
@@ -44,12 +44,14 @@ func NewCorePart(
 	part := &CorePart{
 		Messenger: messenger,
 		VMHost:    newCoreHost,
+		Version:   version,
 	}
 
 	part.Repliers = common.CreateReplySlots(part.noopReplier)
 	part.Repliers[common.ContractDeployRequest] = part.replyToRunSmartContractCreate
 	part.Repliers[common.ContractCallRequest] = part.replyToRunSmartContractCall
 	part.Repliers[common.DiagnoseWaitRequest] = part.replyToDiagnoseWait
+	part.Repliers[common.VersionRequest] = part.replyToVersionRequest
 
 	return part, nil
 }
@@ -113,4 +115,8 @@ func (part *CorePart) replyToDiagnoseWait(request common.MessageHandler) common.
 	duration := time.Duration(int64(typedRequest.Milliseconds) * int64(time.Millisecond))
 	time.Sleep(duration)
 	return common.NewMessageDiagnoseWaitResponse()
+}
+
+func (part *CorePart) replyToVersionRequest(request common.MessageHandler) common.MessageHandler {
+	return common.NewMessageVersionResponse(part.Version)
 }

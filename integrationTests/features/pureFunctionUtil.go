@@ -13,7 +13,6 @@ import (
 	vmcommon "github.com/Dharitri-org/sme-vm-common"
 	vmi "github.com/Dharitri-org/sme-vm-common"
 	worldhook "github.com/Dharitri-org/sme-vm-util/mock-hook-blockchain"
-	cryptohook "github.com/Dharitri-org/sme-vm-util/mock-hook-crypto"
 	mj "github.com/Dharitri-org/sme-vm-util/test-util/mandos/json/model"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +43,7 @@ func newPureFunctionExecutor() (*pureFunctionExecutor, error) {
 
 	blockGasLimit := uint64(10000000)
 	gasSchedule := config.MakeGasMapForTests()
-	vm, err := coreHost.NewCoreVM(world, cryptohook.KryptoHookMockInstance, &core.VMHostParameters{
+	vm, err := coreHost.NewCoreVM(world, &core.VMHostParameters{
 		VMType:                     testVMType,
 		BlockGasLimit:              blockGasLimit,
 		GasSchedule:                gasSchedule,
