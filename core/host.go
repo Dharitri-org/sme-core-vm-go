@@ -3,8 +3,8 @@ package core
 import (
 	"unsafe"
 
+	"github.com/Dharitri-org/sme-core-vm-go/crypto"
 	"github.com/Dharitri-org/sme-core-vm-go/wasmer"
-	vmcommon "github.com/Dharitri-org/sme-vm-common"
 )
 
 const AddressLen = 32
@@ -12,6 +12,7 @@ const AddressLenEth = 20
 const HashLen = 32
 const ArgumentLenEth = 32
 const BalanceLen = 32
+const CodeMetadataLen = 2
 const InitFunctionName = "init"
 const InitFunctionNameEth = "solidity.ctor"
 const CallBackFunctionName = "callBack"
@@ -55,7 +56,7 @@ func GetRuntimeContext(context unsafe.Pointer) RuntimeContext {
 	return GetVmContext(context).Runtime()
 }
 
-func GetCryptoContext(context unsafe.Pointer) vmcommon.CryptoHook {
+func GetCryptoContext(context unsafe.Pointer) crypto.VMCrypto {
 	return GetVmContext(context).Crypto()
 }
 

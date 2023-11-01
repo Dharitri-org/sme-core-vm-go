@@ -4,7 +4,6 @@ import (
 	"github.com/Dharitri-org/sme-core-vm-go/config"
 	"github.com/Dharitri-org/sme-core-vm-go/core"
 	"github.com/Dharitri-org/sme-core-vm-go/core/host"
-	"github.com/Dharitri-org/sme-core-vm-go/ipc/corepart"
 	vmcommon "github.com/Dharitri-org/sme-vm-common"
 )
 
@@ -33,7 +32,6 @@ func newWorld(dataModel *worldDataModel) (*world, error) {
 
 	vm, err := host.NewCoreVM(
 		blockchainHook,
-		corepart.NewCryptoHookGateway(),
 		getHostParameters(),
 	)
 	if err != nil {

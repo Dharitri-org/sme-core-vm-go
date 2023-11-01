@@ -1,5 +1,7 @@
 .PHONY: test test-short build core coredebug clean
 
+CORE_VERSION := $(shell git describe --tags --long --dirty)
+
 clean:
 	go clean -cache -testcache
 
@@ -7,7 +9,7 @@ build:
 	go build ./...
 
 core:
-	go build -o ./cmd/core/core ./cmd/core
+	go build -ldflags="-X main.appVersion=$(CORE_VERSION)" -o ./cmd/core/core ./cmd/core
 	cp ./cmd/core/core ./ipc/tests
 	cp ./cmd/core/core ${CORE_PATH}
 

@@ -2,11 +2,13 @@ package contexts
 
 import (
 	"errors"
+	"fmt"
+	"math/big"
 	"testing"
 
 	"github.com/Dharitri-org/sme-core-vm-go/config"
 	"github.com/Dharitri-org/sme-core-vm-go/core"
-	"github.com/Dharitri-org/sme-core-vm-go/core/crypto"
+	"github.com/Dharitri-org/sme-core-vm-go/core/cryptoapi"
 	"github.com/Dharitri-org/sme-core-vm-go/core/dharitriapi"
 	"github.com/Dharitri-org/sme-core-vm-go/core/ethapi"
 	"github.com/Dharitri-org/sme-core-vm-go/mock"
@@ -15,15 +17,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const WASMPageSize = 65536
+
 func MakeAPIImports() *wasmer.Imports {
 	imports, _ := dharitriapi.DharitriEIImports()
 	imports, _ = dharitriapi.BigIntImports(imports)
+	imports, _ = dharitriapi.SmallIntImports(imports)
 	imports, _ = ethapi.EthereumImports(imports)
-	imports, _ = crypto.CryptoImports(imports)
+	imports, _ = cryptoapi.CryptoImports(imports)
 	return imports
 }
 
-func InitializeWasmer() *wasmer.Imports {
+func InitializeCoreAndWasmer() *mock.VmHostMock {
 	imports := MakeAPIImports()
 	_ = wasmer.SetImports(imports)
 
@@ -31,18 +36,23 @@ func InitializeWasmer() *wasmer.Imports {
 	gasCostConfig, _ := config.CreateGasConfig(gasSchedule)
 	opcodeCosts := gasCostConfig.WASMOpcodeCost.ToOpcodeCostsArray()
 	wasmer.SetOpcodeCosts(&opcodeCosts)
-	return imports
-}
-
-func TestNewRuntimeContext(t *testing.T) {
-	imports := InitializeWasmer()
 
 	host := &mock.VmHostMock{}
 	host.SCAPIMethods = imports
 
+	mockMetering := &mock.MeteringContextMock{}
+	mockMetering.SetGasSchedule(gasSchedule)
+	host.MeteringContext = mockMetering
+
+	return host
+}
+
+func TestNewRuntimeContext(t *testing.T) {
+	host := InitializeCoreAndWasmer()
+
 	vmType := []byte("type")
 
-	runtimeContext, err := NewRuntimeContext(host, vmType)
+	runtimeContext, err := NewRuntimeContext(host, vmType, false)
 	require.Nil(t, err)
 	require.NotNil(t, runtimeContext)
 
@@ -54,14 +64,11 @@ func TestNewRuntimeContext(t *testing.T) {
 }
 
 func TestRuntimeContext_InitState(t *testing.T) {
-	imports := InitializeWasmer()
-
-	host := &mock.VmHostMock{}
-	host.SCAPIMethods = imports
+	host := InitializeCoreAndWasmer()
 
 	vmType := []byte("type")
 
-	runtimeContext, err := NewRuntimeContext(host, vmType)
+	runtimeContext, err := NewRuntimeContext(host, vmType, false)
 	require.Nil(t, err)
 	require.NotNil(t, runtimeContext)
 
@@ -81,14 +88,11 @@ func TestRuntimeContext_InitState(t *testing.T) {
 }
 
 func TestRuntimeContext_NewWasmerInstance(t *testing.T) {
-	imports := InitializeWasmer()
-
-	host := &mock.VmHostMock{}
-	host.SCAPIMethods = imports
+	host := InitializeCoreAndWasmer()
 
 	vmType := []byte("type")
 
-	runtimeContext, err := NewRuntimeContext(host, vmType)
+	runtimeContext, err := NewRuntimeContext(host, vmType, false)
 	require.Nil(t, err)
 
 	runtimeContext.SetMaxInstanceCount(1)
@@ -117,12 +121,13 @@ func TestRuntimeContext_StateSettersAndGetters(t *testing.T) {
 	host.SCAPIMethods = imports
 
 	vmType := []byte("type")
-	runtimeContext, _ := NewRuntimeContext(host, vmType)
+	runtimeContext, _ := NewRuntimeContext(host, vmType, false)
 
 	arguments := [][]byte{[]byte("argument 1"), []byte("argument 2")}
 	vmInput := vmcommon.VMInput{
 		CallerAddr: []byte("caller"),
 		Arguments:  arguments,
+		CallValue:  big.NewInt(0),
 	}
 	callInput := &vmcommon.ContractCallInput{
 		VMInput:       vmInput,
@@ -140,6 +145,7 @@ func TestRuntimeContext_StateSettersAndGetters(t *testing.T) {
 	vmInput2 := vmcommon.VMInput{
 		CallerAddr: []byte("caller2"),
 		Arguments:  arguments,
+		CallValue:  big.NewInt(0),
 	}
 	runtimeContext.SetVMInput(&vmInput2)
 	require.Equal(t, []byte("caller2"), runtimeContext.GetVMInput().CallerAddr)
@@ -149,13 +155,10 @@ func TestRuntimeContext_StateSettersAndGetters(t *testing.T) {
 }
 
 func TestRuntimeContext_PushPopInstance(t *testing.T) {
-	imports := InitializeWasmer()
-
-	host := &mock.VmHostMock{}
-	host.SCAPIMethods = imports
+	host := InitializeCoreAndWasmer()
 
 	vmType := []byte("type")
-	runtimeContext, _ := NewRuntimeContext(host, vmType)
+	runtimeContext, _ := NewRuntimeContext(host, vmType, false)
 	runtimeContext.SetMaxInstanceCount(1)
 
 	gasLimit := uint64(100000000)
@@ -187,12 +190,13 @@ func TestRuntimeContext_PushPopState(t *testing.T) {
 	host.SCAPIMethods = imports
 
 	vmType := []byte("type")
-	runtimeContext, _ := NewRuntimeContext(host, vmType)
+	runtimeContext, _ := NewRuntimeContext(host, vmType, false)
 	runtimeContext.SetMaxInstanceCount(1)
 
 	vmInput := vmcommon.VMInput{
 		CallerAddr:  []byte("caller"),
 		GasProvided: 1000,
+		CallValue:   big.NewInt(0),
 	}
 
 	funcName := "test_func"
@@ -239,13 +243,10 @@ func TestRuntimeContext_PushPopState(t *testing.T) {
 }
 
 func TestRuntimeContext_Instance(t *testing.T) {
-	imports := InitializeWasmer()
-
-	host := &mock.VmHostMock{}
-	host.SCAPIMethods = imports
+	host := InitializeCoreAndWasmer()
 
 	vmType := []byte("type")
-	runtimeContext, _ := NewRuntimeContext(host, vmType)
+	runtimeContext, _ := NewRuntimeContext(host, vmType, false)
 	runtimeContext.SetMaxInstanceCount(1)
 
 	gasLimit := uint64(100000000)
@@ -260,7 +261,9 @@ func TestRuntimeContext_Instance(t *testing.T) {
 
 	funcName := "increment"
 	input := &vmcommon.ContractCallInput{
-		VMInput:       vmcommon.VMInput{},
+		VMInput: vmcommon.VMInput{
+			CallValue: big.NewInt(0),
+		},
 		RecipientAddr: []byte("addr"),
 		Function:      funcName,
 	}
@@ -284,18 +287,15 @@ func TestRuntimeContext_Instance(t *testing.T) {
 }
 
 func TestRuntimeContext_Breakpoints(t *testing.T) {
-	imports := InitializeWasmer()
+	host := InitializeCoreAndWasmer()
 
 	mockOutput := &mock.OutputContextMock{}
 	mockOutput.SetReturnMessage("")
 
-	host := &mock.VmHostMock{
-		OutputContext: mockOutput,
-		SCAPIMethods:  imports,
-	}
+	host.OutputContext = mockOutput
 
 	vmType := []byte("type")
-	runtimeContext, _ := NewRuntimeContext(host, vmType)
+	runtimeContext, _ := NewRuntimeContext(host, vmType, false)
 	runtimeContext.SetMaxInstanceCount(1)
 
 	gasLimit := uint64(100000000)
@@ -345,13 +345,10 @@ func TestRuntimeContext_Breakpoints(t *testing.T) {
 }
 
 func TestRuntimeContext_MemLoadStoreOk(t *testing.T) {
-	imports := InitializeWasmer()
-
-	host := &mock.VmHostMock{}
-	host.SCAPIMethods = imports
+	host := InitializeCoreAndWasmer()
 
 	vmType := []byte("type")
-	runtimeContext, _ := NewRuntimeContext(host, vmType)
+	runtimeContext, _ := NewRuntimeContext(host, vmType, false)
 	runtimeContext.SetMaxInstanceCount(1)
 
 	gasLimit := uint64(100000000)
@@ -379,14 +376,41 @@ func TestRuntimeContext_MemLoadStoreOk(t *testing.T) {
 	require.Equal(t, []byte{'t', 'e', 's', 't', ' ', 'd', 'a', 't', 'a', 0}, memContents)
 }
 
-func TestRuntimeContext_MemLoadCases(t *testing.T) {
-	imports := InitializeWasmer()
-
-	host := &mock.VmHostMock{}
-	host.SCAPIMethods = imports
+func TestRuntimeContext_MemoryIsBlank(t *testing.T) {
+	host := InitializeCoreAndWasmer()
 
 	vmType := []byte("type")
-	runtimeContext, _ := NewRuntimeContext(host, vmType)
+	runtimeContext, _ := NewRuntimeContext(host, vmType, false)
+	runtimeContext.SetMaxInstanceCount(1)
+
+	gasLimit := uint64(100000000)
+	path := "./../../test/contracts/init-simple/output/init-simple.wasm"
+	contractCode := core.GetSCCode(path)
+	err := runtimeContext.StartWasmerInstance(contractCode, gasLimit)
+	require.Nil(t, err)
+
+	memory := runtimeContext.instance.Memory
+	err = memory.Grow(30)
+	require.Nil(t, err)
+
+	totalPages := 32
+	memoryContents := memory.Data()
+	require.Equal(t, memory.Length(), uint32(len(memoryContents)))
+	require.Equal(t, totalPages*WASMPageSize, len(memoryContents))
+
+	for i, value := range memoryContents {
+		if value != byte(0) {
+			msg := fmt.Sprintf("Non-zero value found at %d in Wasmer memory: 0x%X", i, value)
+			require.Fail(t, msg)
+		}
+	}
+}
+
+func TestRuntimeContext_MemLoadCases(t *testing.T) {
+	host := InitializeCoreAndWasmer()
+
+	vmType := []byte("type")
+	runtimeContext, _ := NewRuntimeContext(host, vmType, false)
 	runtimeContext.SetMaxInstanceCount(1)
 
 	gasLimit := uint64(100000000)
@@ -446,13 +470,10 @@ func TestRuntimeContext_MemLoadCases(t *testing.T) {
 }
 
 func TestRuntimeContext_MemStoreCases(t *testing.T) {
-	imports := InitializeWasmer()
-
-	host := &mock.VmHostMock{}
-	host.SCAPIMethods = imports
+	host := InitializeCoreAndWasmer()
 
 	vmType := []byte("type")
-	runtimeContext, _ := NewRuntimeContext(host, vmType)
+	runtimeContext, _ := NewRuntimeContext(host, vmType, false)
 	runtimeContext.SetMaxInstanceCount(1)
 
 	gasLimit := uint64(100000000)
@@ -514,13 +535,10 @@ func TestRuntimeContext_MemStoreCases(t *testing.T) {
 }
 
 func TestRuntimeContext_MemLoadStoreVsInstanceStack(t *testing.T) {
-	imports := InitializeWasmer()
-
-	host := &mock.VmHostMock{}
-	host.SCAPIMethods = imports
+	host := InitializeCoreAndWasmer()
 
 	vmType := []byte("type")
-	runtimeContext, _ := NewRuntimeContext(host, vmType)
+	runtimeContext, _ := NewRuntimeContext(host, vmType, false)
 	runtimeContext.SetMaxInstanceCount(2)
 
 	gasLimit := uint64(100000000)

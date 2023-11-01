@@ -22,7 +22,6 @@
 /cmd/coredebug/db
 /ipc/tests/testdata/streams
 /ipc/tests/core
-/fuzz/delegation/fuzz_gen*.scen.json
 
 # VSCode settings
 .vscode

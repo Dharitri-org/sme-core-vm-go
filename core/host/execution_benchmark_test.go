@@ -75,7 +75,7 @@ func deploy(tb testing.TB, totalTokenSupply *big.Int) (*vmHost, *mock.Blockchain
 	gasMap, err := LoadGasScheduleConfig("../../test/gasSchedule.toml")
 	require.Nil(tb, err)
 
-	host, err := NewCoreVM(mockBlockchainHook, &mock.CryptoHookMock{}, &core.VMHostParameters{
+	host, err := NewCoreVM(mockBlockchainHook, &core.VMHostParameters{
 		VMType:                     defaultVMType,
 		BlockGasLimit:              uint64(1000),
 		GasSchedule:                gasMap,

@@ -74,6 +74,7 @@ func doContractRequest(
 		}
 
 		part, err := corepart.NewCorePart(
+			"testversion",
 			files.inputOfCore,
 			files.outputOfCore,
 			vmHostParameters,

@@ -6,10 +6,11 @@ import (
 	"github.com/Dharitri-org/sme-core-vm-go/config"
 	"github.com/Dharitri-org/sme-core-vm-go/core"
 	"github.com/Dharitri-org/sme-core-vm-go/core/contexts"
-	"github.com/Dharitri-org/sme-core-vm-go/core/crypto"
+	"github.com/Dharitri-org/sme-core-vm-go/core/cryptoapi"
 	"github.com/Dharitri-org/sme-core-vm-go/core/dharitriapi"
-	"github.com/Dharitri-org/sme-core-vm-go/core/ethapi"
+	"github.com/Dharitri-org/sme-core-vm-go/crypto"
 	"github.com/Dharitri-org/sme-core-vm-go/wasmer"
+	"github.com/Dharitri-org/sme-dharitri/core/atomic"
 	logger "github.com/Dharitri-org/sme-logger"
 	vmcommon "github.com/Dharitri-org/sme-vm-common"
 )
@@ -27,7 +28,7 @@ type CatchFunction func(error)
 // vmHost implements HostContext interface.
 type vmHost struct {
 	blockChainHook vmcommon.BlockchainHook
-	cryptoHook     vmcommon.CryptoHook
+	cryptoHook     crypto.VMCrypto
 
 	ethInput []byte
 
@@ -40,15 +41,18 @@ type vmHost struct {
 
 	scAPIMethods             *wasmer.Imports
 	protocolBuiltinFunctions vmcommon.FunctionNames
+
+	coreV2EnableEpoch uint32
+	flagCoreV2        atomic.Flag
 }
 
 // NewCoreVM creates a new Core vmHost
 func NewCoreVM(
 	blockChainHook vmcommon.BlockchainHook,
-	cryptoHook vmcommon.CryptoHook,
 	hostParameters *core.VMHostParameters,
 ) (*vmHost, error) {
 
+	cryptoHook := crypto.NewVMCrypto()
 	host := &vmHost{
 		blockChainHook:           blockChainHook,
 		cryptoHook:               cryptoHook,
@@ -59,6 +63,7 @@ func NewCoreVM(
 		bigIntContext:            nil,
 		scAPIMethods:             nil,
 		protocolBuiltinFunctions: hostParameters.ProtocolBuiltinFunctions,
+		coreV2EnableEpoch:        hostParameters.CoreV2EnableEpoch,
 	}
 
 	var err error
@@ -73,12 +78,12 @@ func NewCoreVM(
 		return nil, err
 	}
 
-	imports, err = ethapi.EthereumImports(imports)
+	imports, err = dharitriapi.SmallIntImports(imports)
 	if err != nil {
 		return nil, err
 	}
 
-	imports, err = crypto.CryptoImports(imports)
+	imports, err = cryptoapi.CryptoImports(imports)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +100,11 @@ func NewCoreVM(
 		return nil, err
 	}
 
-	host.runtimeContext, err = contexts.NewRuntimeContext(host, hostParameters.VMType)
+	host.runtimeContext, err = contexts.NewRuntimeContext(
+		host,
+		hostParameters.VMType,
+		hostParameters.UseWarmInstance,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -130,12 +139,12 @@ func NewCoreVM(
 	opcodeCosts := gasCostConfig.WASMOpcodeCost.ToOpcodeCostsArray()
 	wasmer.SetOpcodeCosts(&opcodeCosts)
 
-	host.InitState()
+	host.initContexts()
 
 	return host, nil
 }
 
-func (host *vmHost) Crypto() vmcommon.CryptoHook {
+func (host *vmHost) Crypto() crypto.VMCrypto {
 	return host.cryptoHook
 }
 
@@ -163,6 +172,10 @@ func (host *vmHost) BigInt() core.BigIntContext {
 	return host.bigIntContext
 }
 
+func (host *vmHost) IsCoreV2Enabled() bool {
+	return host.flagCoreV2.IsSet()
+}
+
 func (host *vmHost) GetContexts() (
 	core.BigIntContext,
 	core.BlockchainContext,
@@ -180,6 +193,12 @@ func (host *vmHost) GetContexts() (
 }
 
 func (host *vmHost) InitState() {
+	host.initContexts()
+	host.flagCoreV2.Toggle(host.blockChainHook.CurrentEpoch() >= host.coreV2EnableEpoch)
+	log.Trace("coreV2", "enabled", host.flagCoreV2.IsSet())
+}
+
+func (host *vmHost) initContexts() {
 	host.ClearContextStateStack()
 	host.bigIntContext.InitState()
 	host.outputContext.InitState()
@@ -196,6 +215,9 @@ func (host *vmHost) ClearContextStateStack() {
 }
 
 func (host *vmHost) Clean() {
+	if host.runtimeContext.IsWarmInstance() {
+		return
+	}
 	host.runtimeContext.CleanWasmerInstance()
 	core.RemoveAllHostContexts()
 }
@@ -237,6 +259,11 @@ func (host *vmHost) RunSmartContractCall(input *vmcommon.ContractCallInput) (vmO
 
 	tryCall := func() {
 		vmOutput = host.doRunSmartContractCall(input)
+
+		if host.hasRetriableExecutionError(vmOutput) {
+			log.Error("Retriable execution error detected. Will reset warm Wasmer instance.")
+			host.runtimeContext.ResetWarmInstance()
+		}
 	}
 
 	catch := func(caught error) {
@@ -252,7 +279,7 @@ func (host *vmHost) RunSmartContractCall(input *vmcommon.ContractCallInput) (vmO
 	}
 
 	if vmOutput != nil {
-		log.Trace("RunSmartContractCall end", "returnCode", vmOutput.ReturnCode, "returnMessage", vmOutput.ReturnMessage)
+		log.Debug("RunSmartContractCall end", "returnCode", vmOutput.ReturnCode, "returnMessage", vmOutput.ReturnMessage, "function", input.Function)
 	}
 
 	return
@@ -272,4 +299,12 @@ func TryCatch(try TryFunction, catch CatchFunction, catchFallbackMessage string)
 	}()
 
 	try()
+}
+
+func (host *vmHost) hasRetriableExecutionError(vmOutput *vmcommon.VMOutput) bool {
+	if !host.runtimeContext.IsWarmInstance() {
+		return false
+	}
+
+	return vmOutput.ReturnMessage == "allocation error"
 }

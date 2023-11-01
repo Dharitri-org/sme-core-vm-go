@@ -4,6 +4,7 @@ import (
 	"math/big"
 
 	"github.com/Dharitri-org/sme-core-vm-go/config"
+	"github.com/Dharitri-org/sme-core-vm-go/crypto"
 	"github.com/Dharitri-org/sme-core-vm-go/wasmer"
 	vmcommon "github.com/Dharitri-org/sme-vm-common"
 )
@@ -23,13 +24,14 @@ type CallArgsParser interface {
 }
 
 type VMHost interface {
-	Crypto() vmcommon.CryptoHook
+	Crypto() crypto.VMCrypto
 	Blockchain() BlockchainContext
 	Runtime() RuntimeContext
 	BigInt() BigIntContext
 	Output() OutputContext
 	Metering() MeteringContext
 	Storage() StorageContext
+	IsCoreV2Enabled() bool
 
 	CreateNewContract(input *vmcommon.ContractCreateInput) ([]byte, error)
 	ExecuteOnSameContext(input *vmcommon.ContractCallInput) (*AsyncContextInfo, error)
@@ -97,6 +99,8 @@ type RuntimeContext interface {
 	PopInstance()
 	RunningInstancesCount() uint64
 	ClearInstanceStack()
+	IsWarmInstance() bool
+	ResetWarmInstance()
 	ReadOnly() bool
 	SetReadOnly(readOnly bool)
 	StartWasmerInstance(contract []byte, gasLimit uint64) error
@@ -128,12 +132,14 @@ type OutputContext interface {
 	StateStack
 	PopMergeActiveState()
 	CensorVMOutput()
+	ResetGas()
 	AddToActiveState(rightOutput *vmcommon.VMOutput)
 
 	GetOutputAccount(address []byte) (*vmcommon.OutputAccount, bool)
 	DeleteOutputAccount(address []byte)
 	WriteLog(address []byte, topics [][]byte, data []byte)
-	Transfer(destination []byte, sender []byte, gasLimit uint64, value *big.Int, input []byte) error
+	TransferValueOnly(destination []byte, sender []byte, value *big.Int) error
+	Transfer(destination []byte, sender []byte, gasLimit uint64, value *big.Int, input []byte, callType vmcommon.CallType) error
 	SelfDestruct(address []byte, beneficiary []byte)
 	GetRefund() uint64
 	SetRefund(refund uint64)
@@ -161,6 +167,7 @@ type MeteringContext interface {
 	DeductInitialGasForExecution(contract []byte) error
 	DeductInitialGasForDirectDeployment(input CodeDeployInput) error
 	DeductInitialGasForIndirectDeployment(input CodeDeployInput) error
+	DeductAndLockGasIfAsyncStep() error
 	UnlockGasIfAsyncStep()
 	GetGasLockedForAsyncStep() uint64
 }
@@ -179,6 +186,7 @@ type StorageContext interface {
 
 	SetAddress(address []byte)
 	GetStorageUpdates(address []byte) map[string]*vmcommon.StorageUpdate
+	GetStorageFromAddress(address []byte, key []byte) []byte
 	GetStorage(key []byte) []byte
 	GetStorageUnmetered(key []byte) []byte
 	SetStorage(key []byte, value []byte) (StorageStatus, error)

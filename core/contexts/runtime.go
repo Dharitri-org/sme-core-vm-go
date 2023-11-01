@@ -1,12 +1,17 @@
 package contexts
 
 import (
+	"bytes"
 	"fmt"
+	"math/big"
 
 	"github.com/Dharitri-org/sme-core-vm-go/core"
 	"github.com/Dharitri-org/sme-core-vm-go/wasmer"
+	logger "github.com/Dharitri-org/sme-logger"
 	vmcommon "github.com/Dharitri-org/sme-vm-common"
 )
+
+var log = logger.GetOrCreate("core/runtime")
 
 var _ core.RuntimeContext = (*runtimeContext)(nil)
 
@@ -30,19 +35,26 @@ type runtimeContext struct {
 	asyncContextInfo *core.AsyncContextInfo
 
 	validator *WASMValidator
+
+	useWarmInstance     bool
+	warmInstanceAddress []byte
+	warmInstance        *wasmer.Instance
 }
 
 // NewRuntimeContext creates a new runtimeContext
-func NewRuntimeContext(host core.VMHost, vmType []byte) (*runtimeContext, error) {
+func NewRuntimeContext(host core.VMHost, vmType []byte, useWarmInstance bool) (*runtimeContext, error) {
 	scAPINames := host.GetAPIMethods().Names()
 	protocolBuiltinFunctions := host.GetProtocolBuiltinFunctions()
 
 	context := &runtimeContext{
-		host:          host,
-		vmType:        vmType,
-		stateStack:    make([]*runtimeContext, 0),
-		instanceStack: make([]*wasmer.Instance, 0),
-		validator:     NewWASMValidator(scAPINames, protocolBuiltinFunctions),
+		host:                host,
+		vmType:              vmType,
+		stateStack:          make([]*runtimeContext, 0),
+		instanceStack:       make([]*wasmer.Instance, 0),
+		validator:           NewWASMValidator(scAPINames, protocolBuiltinFunctions),
+		useWarmInstance:     useWarmInstance,
+		warmInstanceAddress: nil,
+		warmInstance:        nil,
 	}
 
 	context.InitState()
@@ -67,31 +79,70 @@ func (context *runtimeContext) StartWasmerInstance(contract []byte, gasLimit uin
 		context.instance = nil
 		return core.ErrMaxInstancesReached
 	}
-	options := wasmer.CompilationOptions{
-		GasLimit:           gasLimit,
-		OpcodeTrace:        false,
-		Metering:           true,
-		RuntimeBreakpoints: true,
-	}
-	newInstance, err := wasmer.NewInstanceWithOptions(contract, options)
-	if err != nil {
-		context.instance = nil
-		return err
-	}
 
-	context.instance = newInstance
+	scAddress := context.GetSCAddress()
+	useWarm := context.useWarmInstance && context.warmInstanceAddress != nil && bytes.Equal(scAddress, context.warmInstanceAddress)
+	if scAddress != nil && useWarm {
+		log.Trace("Reusing the warm Wasmer instance")
 
-	idContext := core.AddHostContext(context.host)
-	context.instance.SetContextData(idContext)
+		context.instance = context.warmInstance
+		context.SetPointsUsed(0)
+	} else {
+		log.Trace("Creating a new Wasmer instance")
 
-	err = context.VerifyContractCode()
-	if err != nil {
-		context.CleanWasmerInstance()
-		return err
+		gasSchedule := context.host.Metering().GasSchedule()
+		options := wasmer.CompilationOptions{
+			GasLimit:           gasLimit,
+			UnmeteredLocals:    uint64(gasSchedule.WASMOpcodeCost.LocalsUnmetered),
+			OpcodeTrace:        false,
+			Metering:           true,
+			RuntimeBreakpoints: true,
+		}
+		newInstance, err := wasmer.NewInstanceWithOptions(contract, options)
+		if err != nil {
+			context.instance = nil
+			return err
+		}
+
+		context.instance = newInstance
+		if context.useWarmInstance {
+			context.warmInstanceAddress = context.GetSCAddress()
+			context.warmInstance = context.instance
+		}
+
+		idContext := core.AddHostContext(context.host)
+		context.instance.SetContextData(idContext)
+
+		err = context.VerifyContractCode()
+		if err != nil {
+			context.CleanWasmerInstance()
+			return err
+		}
 	}
 
 	context.SetRuntimeBreakpointValue(core.BreakpointNone)
 	return nil
+}
+
+func (context *runtimeContext) IsWarmInstance() bool {
+	if context.instance != nil && context.instance == context.warmInstance {
+		return true
+	}
+
+	return false
+}
+
+func (context *runtimeContext) ResetWarmInstance() {
+	if context.instance == nil {
+		return
+	}
+
+	core.RemoveHostContext(*context.instance.Data)
+	context.instance.Clean()
+
+	context.instance = nil
+	context.warmInstanceAddress = nil
+	context.warmInstance = nil
 }
 
 func (context *runtimeContext) MustVerifyNextContractCode() {
@@ -103,7 +154,7 @@ func (context *runtimeContext) SetMaxInstanceCount(maxInstances uint64) {
 }
 
 func (context *runtimeContext) InitStateFromContractCallInput(input *vmcommon.ContractCallInput) {
-	context.vmInput = &input.VMInput
+	context.SetVMInput(&input.VMInput)
 	context.scAddress = input.RecipientAddr
 	context.callFunction = input.Function
 	// Reset async map for initial state
@@ -185,7 +236,44 @@ func (context *runtimeContext) GetVMInput() *vmcommon.VMInput {
 }
 
 func (context *runtimeContext) SetVMInput(vmInput *vmcommon.VMInput) {
-	context.vmInput = vmInput
+	if !context.host.IsCoreV2Enabled() || vmInput == nil {
+		context.vmInput = vmInput
+		return
+	}
+
+	context.vmInput = &vmcommon.VMInput{
+		CallType:    vmInput.CallType,
+		GasPrice:    vmInput.GasPrice,
+		GasProvided: vmInput.GasProvided,
+		CallValue:   big.NewInt(0),
+	}
+
+	if vmInput.CallValue != nil {
+		context.vmInput.CallValue.Set(vmInput.CallValue)
+	}
+
+	if len(vmInput.CallerAddr) > 0 {
+		context.vmInput.CallerAddr = make([]byte, len(vmInput.CallerAddr))
+		copy(context.vmInput.CallerAddr, vmInput.CallerAddr)
+	}
+
+	if len(vmInput.OriginalTxHash) > 0 {
+		context.vmInput.OriginalTxHash = make([]byte, len(vmInput.OriginalTxHash))
+		copy(context.vmInput.OriginalTxHash, vmInput.OriginalTxHash)
+	}
+
+	if len(vmInput.CurrentTxHash) > 0 {
+		context.vmInput.CurrentTxHash = make([]byte, len(vmInput.CurrentTxHash))
+		copy(context.vmInput.CurrentTxHash, vmInput.CurrentTxHash)
+	}
+
+	if len(vmInput.Arguments) > 0 {
+		context.vmInput.Arguments = make([][]byte, len(vmInput.Arguments))
+		for i, arg := range vmInput.Arguments {
+			context.vmInput.Arguments[i] = make([]byte, len(arg))
+			copy(context.vmInput.Arguments[i], arg)
+		}
+	}
 }
 
 func (context *runtimeContext) GetSCAddress() []byte {
@@ -307,7 +395,7 @@ func (context *runtimeContext) GetInstanceExports() wasmer.ExportsMap {
 }
 
 func (context *runtimeContext) CleanWasmerInstance() {
-	if context.instance == nil {
+	if context.instance == nil || context.IsWarmInstance() {
 		return
 	}
 
@@ -322,8 +410,8 @@ func (context *runtimeContext) GetFunctionToCall() (wasmer.ExportedFunctionCallb
 		return function, nil
 	}
 
-	if function, ok := exports["main"]; ok {
-		return function, nil
+	if context.callFunction == core.CallbackDefault {
+		return nil, core.ErrNilCallbackFunction
 	}
 
 	return nil, core.ErrFuncNotFound
@@ -331,12 +419,7 @@ func (context *runtimeContext) GetFunctionToCall() (wasmer.ExportedFunctionCallb
 
 func (context *runtimeContext) GetInitFunction() wasmer.ExportedFunctionCallback {
 	exports := context.instance.Exports
-
 	if init, ok := exports[core.InitFunctionName]; ok {
-		return init
-	}
-
-	if init, ok := exports[core.InitFunctionNameEth]; ok {
 		return init
 	}
 
