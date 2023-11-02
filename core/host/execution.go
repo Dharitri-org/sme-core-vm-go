@@ -7,8 +7,8 @@ import (
 
 	"github.com/Dharitri-org/sme-core-vm-go/core"
 	"github.com/Dharitri-org/sme-core-vm-go/core/contexts"
-	"github.com/Dharitri-org/sme-dharitri/core"
 	"github.com/Dharitri-org/sme-logger/check"
+	"github.com/Dharitri-org/sme-dharitri/core"
 	vmcommon "github.com/Dharitri-org/sme-vm-common"
 	"github.com/Dharitri-org/sme-vm-common/parsers"
 )

@@ -13,7 +13,7 @@ import (
 var _ vmcommon.CryptoHook = (*CryptoHookGateway)(nil)
 
 // CryptoHookGateway is a copy of the CryptoHook implementation from the node
-// TODO: Remove this implementation and reference DharitriNetwork/common/crypto when it becomes available
+// TODO: Remove this implementation and reference Dharitri-org/common/crypto when it becomes available
 type CryptoHookGateway struct {
 }
 

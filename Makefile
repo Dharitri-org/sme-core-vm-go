@@ -60,7 +60,7 @@ ifndef SANDBOX
 	$(error SANDBOX variable is undefined)
 endif
 	rm -rf ${SANDBOX}/sc-delegation-rs
-	git clone --depth=1 --branch=master https://github.com/Dharitri-org/sme-delegation-rs.git  ${SANDBOX}/sc-delegation-rs
+	git clone --depth=1 --branch=master https://github.com/Dharitri-org/sme-delegation-rs.git ${SANDBOX}/sc-delegation-rs
 	rm -rf ${SANDBOX}/sc-delegation-rs/.git
 	moapy contract build ${SANDBOX}/sc-delegation-rs
 	moapy contract test --directory="tests" ${SANDBOX}/sc-delegation-rs
