@@ -1,5 +1,5 @@
 language: go
-go: '1.19.12'
+go: '1.13'
 os:
 - linux
 - osx
